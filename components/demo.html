@@ -1,0 +1,36 @@
+<!-- demo.html -->
+<template>
+  <div class="title" @click="test">{{title}}</div>
+</template>
+<script>
+  defineComponent((Vue, template) => {
+    return {
+      name: "DemoComponent",
+      ...Vue.compile(template),
+      props: {
+        title: {
+          type: String,
+          default: "我是Demo组件",
+        },
+      },
+      created() {
+        console.log("我是Demo组件的created");
+      },
+      methods: {
+        test() {
+          hello2();
+        },
+      },
+    };
+  });
+
+  function hello2() {
+    console.log("fff");
+  }
+</script>
+
+<style>
+  .title {
+    color: red;
+  }
+</style>
