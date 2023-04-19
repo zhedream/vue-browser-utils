@@ -8,11 +8,16 @@
   },
   "scripts": {
     "build": "browserify src/index.js --s vueBrowserUtils > vue-browser-utils.js",
-    "server": "http-server"
+    "server": "http-server",
+    "transformCodeToExposeModule": "browserify ./src/transformCodeToExposeModule.js --s transformCodeToExposeModule > transformCodeToExposeModule.min.js"
   },
   "author": "zhedream",
   "license": "MIT",
   "devDependencies": {
+    "@babel/generator": "^7.21.4",
+    "@babel/parser": "^7.21.4",
+    "@babel/traverse": "^7.21.4",
+    "@babel/types": "^7.21.4",
     "browserify": "^17.0.0",
     "http-server": "^14.1.0"
   }
