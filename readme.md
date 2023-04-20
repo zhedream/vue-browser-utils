@@ -110,3 +110,14 @@ defineComponent
 requireModuleList
 
 requireModule
+
+
+# 升级版 moduleM.js
+
+自定义模块运行时, 用于在浏览器环境中加载 自定义模块 xx.m.js  xx.m.vue
+
+m 模块 使用 esm 语法, 无需打包, 直接在浏览器中运行
+
+兼容性: JavaScript 的 ECMAScript 2017（ES8）
+
+外部使用 loadModule 加载模块

@@ -10,6 +10,209 @@ function fetchText(url) {
   return fetch(url).then((res) => res.text());
 }
 
+// ==================  处理 js 模块 ==================
+function resolveModule() {
+  let moduleResolve, moduleReject;
+  let p = new Promise((resolve, reject) => {
+    moduleResolve = resolve;
+    moduleReject = reject;
+  });
+  return [moduleResolve, moduleReject, p];
+}
+
+var loadModuleJs = (() => {
+
+  const moduleCache = {};
+
+  async function loadModuleJs(moduleUrl, isCache = true) {
+
+    let key = moduleUrl.split("/").join("_");
+
+    let [moduleResolve, moduleReject, p] = resolveModule();
+
+    if (isCache && moduleCache[key]) {
+      return moduleCache[key];
+    } else {
+      moduleCache[key] = p;
+    }
+
+    let script_text = await fetchText(moduleUrl);
+
+    const useExposeModule = (moduleResolve) => {
+      return (callModule) => {
+        // 接收一个普通 vue 组件对象, 或 Promise 对象
+        const mod = callModule();
+        moduleResolve(mod);
+        return mod;
+      }
+    };
+
+    const exposeModule = useExposeModule(moduleResolve);
+
+    // console.log(script_text);
+    script_text = transformCodeToExposeModule(script_text);
+    // console.log("script_text: \n", script_text)
+
+    const AsyncFunction = Object.getPrototypeOf(async function () {
+    }).constructor;
+    const fn = new AsyncFunction("exposeModule", script_text);
+    const mod = await fn(exposeModule).catch((e) => {
+      console.error("加载模块失败", moduleUrl, e);
+      moduleReject();
+    })
+
+    // 兼容 代码片段 return 写法. 如 `class A{} ; return {A}`
+    moduleResolve(mod);
+
+    return moduleCache[key];
+  }
+
+  return loadModuleJs;
+
+})();
+
+// ==================  处理 vue 模块 ==================
+function transformDefineComponent(str) {
+
+  if (str.indexOf("defineComponent") > -1) {
+    return str;
+  }
+
+  if (str.indexOf("export default") === -1) {
+    return str;
+  }
+
+
+  // 匹配出 export default { ... } 中的内容
+  let reg = /(?<=export default\s{)(.*)(?=})/s;
+  let result = str.match(reg);
+
+  // 替换掉 str 中 export default { } 的内容
+  let define = `
+defineComponent((Vue, template) => {
+  return {
+    ...Vue.compile(template),
+    ${result[0]}
+  };
+});
+`;
+
+  return str.replace(/export default {[\s\S]*}/, define);
+
+}
+
+function useDefineComponent(Vue, template, resolve) {
+  return (callComponent) => {
+    // 接收一个普通 vue 组件对象, 或 Promise 对象
+    let component = callComponent(Vue, template);
+    resolve(component);
+    return component;
+  };
+}
+
+var loadModuleVue = (function (Vue, less) {
+
+  const moduleCache = {};
+
+  async function loadModuleVue(moduleUrl, isCache = true) {
+
+    let key = moduleUrl.split("/").join("_");
+
+    let moduleResolve, moduleReject;
+    if (isCache && moduleCache[key]) {
+      return moduleCache[key];
+    } else {
+      moduleCache[key] = new Promise((resolve, reject) => {
+        moduleResolve = resolve;
+        moduleReject = reject;
+      });
+    }
+
+    let text = await fetchText(moduleUrl);
+    let div = document.createElement("div");
+    div.innerHTML = text;
+
+    // =======================  处理 template =======================
+
+    const template = div.querySelector("template").innerHTML;
+    const defineComponent = useDefineComponent(Vue, template, moduleResolve);
+
+    // =======================  处理 less 样式 =======================
+
+    const style = div.querySelector("style");
+    if (style && style.lang === "less") {
+      let r = await less.render(style.innerHTML);
+      style.innerHTML = r.css;
+    }
+    // 加载样式
+    if (style) {
+      style.id = "style_" + key;
+      if (document.getElementById("style_" + key)) {
+        document.getElementById("style_" + key).innerHTML = style.innerHTML;
+      } else {
+        document.head.appendChild(style);
+      }
+    }
+
+    // =======================  处理 script =======================
+
+    // https://stackoverflow.com/questions/11513392/how-to-detect-when-innerhtml-is-complete
+    // https://stackoverflow.com/questions/1197575/can-scripts-be-inserted-with-innerhtml
+    const script = div.querySelector("script");
+
+    let script_text = script.innerHTML.trim();
+
+    // 代码转换:  defineComponent
+    script_text = transformDefineComponent(script_text);
+    // 代码转换:  import
+    const ast = transformCodeToExposeModule.parse(script_text, {
+      sourceType: "module",
+    });
+    transformCodeToExposeModule.transformImport(ast);
+    script_text = transformCodeToExposeModule.generator(ast).code;
+
+    // 执行代码, 加载代码
+    const script_text_eval =
+      `
+(async ()=>{
+  try{
+    ${script_text} 
+  }catch(e){
+    console.error('加载模块失败', url, e);
+    comReject();
+  }
+})();`;
+
+    eval(script_text_eval);
+
+    div.remove();
+    div = null;
+
+    return moduleCache[key];
+  }
+
+  return loadModuleVue;
+
+})(Vue, less);
+
+var loadAsyncComponent = (() => {
+
+  const loadFnCache = {};
+
+  function loadAsyncComponent(url, isCache = true) {
+    let key = url.split("/").join("_");
+
+    // 保证返回同一个函数, 保证同一个组件只加载一次
+    if (isCache && loadFnCache[key]) {
+      return loadFnCache[key];
+    } else {
+      loadFnCache[key] = () => loadModule(url, isCache);
+      return loadFnCache[key];
+    }
+  }
+
+  return loadAsyncComponent;
+})();
 
 // TODO: 加载自定义模块, 同时并行加载, 同时用到一个模块, 可能会重复请求记载, 存在锁问题, 使用 Promise 解决
 var loadModule = (() => {
@@ -26,127 +229,23 @@ var loadModule = (() => {
       });
     }
 
-    const useExposeModule = (moduleResolve) => {
-      return (callModule) => {
-        // 接收一个普通 vue 组件对象, 或 Promise 对象
-        const mod = callModule();
+    // .js
+    if (moduleUrl.endsWith(".js")) {
+      loadModuleJs(moduleUrl, isCache).then((mod) => {
         moduleResolve(mod);
-        return mod;
-      }
-    };
-
-    const exposeModule = useExposeModule(moduleResolve);
-
-    let script_text = await fetchText(moduleUrl);
-    // console.log(script_text);
-    script_text = transformCodeToExposeModule(script_text);
-    // console.log("script_text: \n", script_text)
-
-    const script_text_eval = `(async ()=>{ 
-        try{
-          ${script_text} 
-        }catch(e){
-          console.error('加载模块失败', moduleUrl,e)
-          moduleReject()
-        }
-      })() `;
-
-    // 不要 const mod = await eval(script_text_eval);
-    const mod = await eval(script_text_eval);
-    moduleResolve(mod);
+      });
+    }
+    // .vue
+    else if (moduleUrl.endsWith(".vue")) {
+      loadModuleVue(moduleUrl, isCache).then((mod) => {
+        moduleResolve(mod);
+      });
+    }
 
     return moduleCache[moduleUrl];
   }
 
   return loadModule;
-})();
-
-var importModule = (() => {
-  const moduleCache = {};
-
-// 维护依赖关系
-  function useDefineExpose(module, injectContext, callExpose) {
-    async function defineExpose(...args) {
-      // 接收一个普通 vue 组件对象, 或 Promise 对象
-      const len = args.length;
-      if (len === 1) {
-        const arg = args[0];
-        if (typeof arg === "function") {
-          const res = await arg(injectContext); // Promise<{}>
-          if (typeof res !== "object") {
-            console.error("defineExpose function 返回值必须是 {} 或 Promise<{}>");
-          }
-          Object.assign(module, res);
-        } else if (typeof arg instanceof Promise) {
-          const res = await arg;
-          if (typeof res !== "object") {
-            throw new Error("defineExpose 接收 {} 或 Promise<{}>");
-          }
-          Object.assign(module, res); // Promise<{}>
-        } else if (typeof arg === "object") {
-          Object.assign(module, arg); // {}
-        } else {
-          throw new Error("defineExpose 参数错误")
-        }
-      } else if (len === 2) {
-        const key = args[0];
-        const value = args[1];
-        module[key] = value;
-      } else {
-        throw new Error("defineExpose 参数错误")
-      }
-    }
-
-    // return defineExpose;
-    // 截至异步脚本 执行完毕, 劫持 调用次数
-    return function (...args) {
-      let res = defineExpose(...args);
-      callExpose(res);
-      return res;
-    };
-  }
-
-  function fetchText(url) {
-    const len = arguments.length;
-    console.log("len: ", len);
-    console.log("arguments: ", arguments);
-    return fetch(url).then((res) => res.text());
-  }
-
-  async function importModule(moduleUrl, isCache = true, injectContext) {
-    let key = moduleUrl.split("/").join("_");
-
-    let moduleResolve, moduleReject;
-    if (isCache && moduleCache[key]) {
-      return moduleCache[key];
-    } else {
-      moduleCache[key] = new Promise((resolve, reject) => {
-        moduleResolve = resolve;
-        moduleReject = reject;
-      });
-    }
-
-    const module = {};
-    const defineExposeList = [];
-    const defineExpose = useDefineExpose(module, injectContext, (expose) => {
-      defineExposeList.push(expose);
-    });
-    const script_text = await fetchText(moduleUrl);
-    const script_text_eval = `(async function(){
-              try{
-                ${script_text} 
-              }catch(e){
-                console.error('加载模块失败', moduleUrl, e);
-                moduleReject(e);
-              }
-            })() `;
-    await eval(script_text_eval);
-    await Promise.all(defineExposeList);
-    moduleResolve(module);
-    return module;
-  }
-
-  return importModule;
 })();
 
 /**
@@ -227,18 +326,3 @@ function loadStyleLink(url) {
   }
 }
 
-function requireModuleList(modules) {
-  return new Promise((res) => {
-    window.require(modules, function (...args) {
-      res(args);
-    });
-  });
-}
-
-function requireModule(module) {
-  return new Promise((res) => {
-    window.require([module], function (module) {
-      res(module);
-    });
-  });
-}
