@@ -23,6 +23,7 @@ function resolveModule() {
 var loadModuleJs = (() => {
 
   const moduleCache = {};
+  const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
 
   async function loadModuleJs(moduleUrl, isCache = true) {
 
@@ -53,8 +54,6 @@ var loadModuleJs = (() => {
     script_text = transformCodeToExposeModule(script_text);
     // console.log("script_text: \n", script_text)
 
-    const AsyncFunction = Object.getPrototypeOf(async function () {
-    }).constructor;
     const fn = new AsyncFunction("exposeModule", script_text);
     const mod = await fn(exposeModule).catch((e) => {
       console.error("加载模块失败", moduleUrl, e);
@@ -105,7 +104,7 @@ function useDefineComponent(Vue, template, resolve) {
   return (callComponent) => {
     // 接收一个普通 vue 组件对象, 或 Promise 对象
     let component = callComponent(Vue, template);
-    resolve(component);
+    resolve({ default: component });
     return component;
   };
 }
@@ -113,6 +112,7 @@ function useDefineComponent(Vue, template, resolve) {
 var loadModuleVue = (function (Vue, less) {
 
   const moduleCache = {};
+  const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
 
   async function loadModuleVue(moduleUrl, isCache = true) {
 
@@ -172,18 +172,24 @@ var loadModuleVue = (function (Vue, less) {
     script_text = transformCodeToExposeModule.generator(ast).code;
 
     // 执行代码, 加载代码
-    const script_text_eval =
-      `
-(async ()=>{
-  try{
-    ${script_text} 
-  }catch(e){
-    console.error('加载模块失败', url, e);
-    comReject();
-  }
-})();`;
+    //     const script_text_eval =
+    //       `
+    // (async ()=>{
+    //   try{
+    //     ${script_text}
+    //   }catch(e){
+    //     console.error('加载模块失败', url, e);
+    //     comReject();
+    //   }
+    // })();`;
+    //
+    //     eval(script_text_eval);
 
-    eval(script_text_eval);
+    const fn = new AsyncFunction("defineComponent", script_text);
+    fn(defineComponent).catch((e) => {
+      console.error("加载模块失败", moduleUrl, e);
+      moduleReject();
+    });
 
     div.remove();
     div = null;
@@ -206,7 +212,7 @@ var loadAsyncComponent = (() => {
     if (isCache && loadFnCache[key]) {
       return loadFnCache[key];
     } else {
-      loadFnCache[key] = () => loadModule(url, isCache);
+      loadFnCache[key] = () => loadModule(url, isCache).then(mod => mod.default);
       return loadFnCache[key];
     }
   }
@@ -237,6 +243,11 @@ var loadModule = (() => {
     }
     // .vue
     else if (moduleUrl.endsWith(".vue")) {
+      loadModuleVue(moduleUrl, isCache).then((mod) => {
+        moduleResolve(mod);
+      });
+    } else {
+      console.log("未知模块类型,按 .m.vue 加载", moduleUrl)
       loadModuleVue(moduleUrl, isCache).then((mod) => {
         moduleResolve(mod);
       });
@@ -283,6 +294,8 @@ function loadScript(url, isEsm = false, cache = false) {
     script.dataset.time = new Date().getTime() + "";
     if (module1) script.type = "module";
 
+    document.body.appendChild(script);
+
     return new Promise((res, rej) => {
       script.onload = () => {
         res(script);
@@ -293,7 +306,6 @@ function loadScript(url, isEsm = false, cache = false) {
     });
   }
 
-  document.body.appendChild(script);
 
   function removeScript() {
     document.body.removeChild(script);
@@ -302,6 +314,26 @@ function loadScript(url, isEsm = false, cache = false) {
   return load;
 }
 
+async function awaitLock(fn, timeOut = 1000) {
+  let now = Date.now();
+  while (true) {
+    if (Date.now() - now > timeOut) throw new Error("awaitLock timeout");
+    let flag = await fn();
+    console.log(flag, 1111111);
+    if (flag) break;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+}
+
+function myEvalSkipAmd(text) {
+  let define2 = window.define;
+  let require2 = window.require;
+  window.define = undefined;
+  window.require = undefined;
+  eval(text);
+  window.define = define2;
+  window.require = require2;
+}
 function loadStyleLink(url) {
   let ID = url.split("/").join("_");
 
