@@ -3,19 +3,29 @@ const traverse = require("@babel/traverse").default;
 const generator = require("@babel/generator").default;
 const t = require("@babel/types");
 
+const transformExportFrom = require("./transformExportFrom");
+const transformImportFrom = require("./transformImportFrom");
+
 // let code = `
 
 // import * as M2 from 'javascript/menu2.m.js';
 
-// import Mu , {menu} from 'javascript/menu.m.js';
+// import * as M3 from 'javascript/menu2.m.js';
 
-// export function User() { }
+// import Mu , {menu as f,uu,aa} from 'javascript/menu.m.js';
 
-// export const PI = 3.1415;
+// import User2  from 'javascript/menu.m.js';
 
-// export let title = "hello world"
+// export default {
+//   a: 1,
+// }
 
-// export default class A {}
+// export class Button { }
+
+// let ccc = 1;
+
+// export {uu,aa ,ccc,User2}
+
 // `;
 
 // let nextCode = transformCodeToExposeModule(code);
@@ -25,11 +35,12 @@ function transformCodeToExposeModule(code) {
   // 1. 生成 AST
   const ast = parser.parse(code, { sourceType: "module" });
 
+
   // 2. 处理导出的标识符
-  transformExport(ast);
+  transformExportFrom(ast);
 
   // 3. 处理导入的标识符
-  transformImport(ast);
+  transformImportFrom(ast);
 
   // 7. 生成新的代码 newCode
   const newCode = generator(ast).code;
@@ -85,14 +96,10 @@ function transformExport(ast) {
       // 8.3. 将原 export default 去除
       path.remove();
     },
-    // ExportDefaultDeclaration(path) {
-    //   console.log('path: ', path);
-    //   // 8.1. 将 default 作为属性名添加到 exportNames 中
-    //   exportNames.push("default");
+    ExportAllDeclaration(path) {
+      console.log('path: ', path);
 
-    //   // 8.2. 将原 export default 去除
-    //   path.replaceWith(path.node.declaration);
-    // },
+    }
   });
 
   // 5. 创建 exposeModule 函数调用及其参数
@@ -139,6 +146,8 @@ function transformImport(ast) {
         t.identifier(importSource)
       );
 
+      tempIdentifier.name = `_${tempIdentifier.name}` + Math.random().toString(16).slice(2, 8);
+
       const importBinding = t.variableDeclarator(
         tempIdentifier,
         t.awaitExpression(
@@ -150,31 +159,31 @@ function transformImport(ast) {
 
       const defaultBinding = defaultSpecifier
         ? t.variableDeclarator(
-            defaultSpecifier.local,
-            t.memberExpression(tempIdentifier, t.identifier("default"))
-          )
+          defaultSpecifier.local,
+          t.memberExpression(tempIdentifier, t.identifier("default"))
+        )
         : null;
 
       const namedBindings = namedSpecifiers.length
         ? t.variableDeclarator(
-            t.objectPattern(
-              namedSpecifiers.map((specifier) =>
-                t.objectProperty(specifier.imported, specifier.local)
-              )
-            ),
-            tempIdentifier
-          )
+          t.objectPattern(
+            namedSpecifiers.map((specifier) =>
+              t.objectProperty(specifier.imported, specifier.local)
+            )
+          ),
+          tempIdentifier
+        )
         : null;
 
       const namespaceBinding = namespaceSpecifier
         ? t.variableDeclarator(
-            namespaceSpecifier.local,
-            t.awaitExpression(
-              t.callExpression(t.identifier("loadModule"), [
-                t.stringLiteral(importSource),
-              ])
-            )
+          namespaceSpecifier.local,
+          t.awaitExpression(
+            t.callExpression(t.identifier("loadModule"), [
+              t.stringLiteral(importSource),
+            ])
           )
+        )
         : null;
 
       const variableDeclarations = [
@@ -195,11 +204,11 @@ function transformImport(ast) {
       }
     },
 
-    ExportNamedDeclaration(path) {
-      if (path.node.declaration) {
-        path.replaceWith(path.node.declaration);
-      }
-    },
+    // ExportNamedDeclaration(path) {
+    //   if (path.node.declaration) {
+    //     path.replaceWith(path.node.declaration);
+    //   }
+    // },
   });
 }
 
