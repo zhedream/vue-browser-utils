@@ -224,6 +224,10 @@ var loadAsyncComponent = (() => {
 var loadModule = (() => {
   const moduleCache = {};
 
+  const moduleMap = {
+    'vue': Vue,
+  }
+
   async function loadModule(moduleUrl, isCache = true) {
     let moduleResolve, moduleReject;
     if (isCache && moduleCache[moduleUrl]) {
@@ -233,6 +237,11 @@ var loadModule = (() => {
         moduleResolve = resolve;
         moduleReject = reject;
       });
+    }
+
+    if (moduleMap[moduleUrl]) {
+      moduleResolve(moduleMap[moduleUrl]);
+      return moduleCache[moduleUrl];
     }
 
     // .js
