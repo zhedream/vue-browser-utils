@@ -1,11 +1,23 @@
+import Vue, { h } from "vue";
+import BComponent from "./a.m.vue";
+import { requireModule } from "../vue-browser-utils.js";
+import Demo2 from "../components/demo2/demo2.js";
+console.log('Demo2: ', Demo2);
+Promise.resolve().then(()=>{
+  window.report = report;
+})
 var report = new Vue({
   el: "#app",
   components: {
     AComponent: loadAsyncComponent("../components/demo.html"),
-    BComponent: loadAsyncComponent("/examples/a.m.vue"),
-    demo2: () => {
-      return loadAsyncComponent("../components/demo2/demo2.js");
+    BComponent: BComponent,
+    demoUser: () => {
+      console.log(123123);
+      return requireModule("../components/demo2/demo2.js");
+      // return Promise.resolve(Demo2)
+
     },
+    Demo2,
   },
   data() {
     return {};

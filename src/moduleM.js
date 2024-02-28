@@ -10,6 +10,39 @@ function fetchText(url) {
   return fetch(url).then((res) => res.text());
 }
 
+// ==================  处理 amd 模块 ==================
+function hasAmdDefineCallExpression(codeString) {
+  // 使用正则表达式来匹配 "define" 后面跟随任意数量的空白字符，然后是一个左括号 "("，
+  // 再跟随任意数量的空白字符，然后是任意字符（非贪婪匹配），最后是一个右括号 ")"。
+  // 使用\s*来匹配任意数量的空白字符，包括换行。
+  // 使用[\s\S]*?来匹配任意字符，包括换行，使用非贪婪模式。
+  const regex = /define\s*\(\s*[\s\S]*?\s*\)/;
+  return regex.test(codeString);
+}
+
+function loadModuleAmd(script_text, moduleUrl) {
+
+  let module;
+
+  const define = (...args) => {
+    // define(()=>{})
+    // define([],()=>{})
+    // define('',[],()=>{})
+    let i = args.length - 1;
+    let callModule = args[i];
+    if (module !== undefined) {
+      console.warn("重复加载模块", moduleUrl);
+    }
+    module = callModule();
+  };
+  define.amd = { loadModuleAmd: true };
+
+  // 依赖注入
+  let fn = new Function("define", script_text);
+  fn(define);
+  return module;
+}
+
 // ==================  处理 js 模块 ==================
 function resolveModule() {
   let moduleResolve, moduleReject;
@@ -23,7 +56,8 @@ function resolveModule() {
 var loadModuleJs = (() => {
 
   const moduleCache = {};
-  const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
+  const AsyncFunction = Object.getPrototypeOf(async function () {
+  }).constructor;
 
   async function loadModuleJs(moduleUrl, isCache = true) {
 
@@ -38,6 +72,18 @@ var loadModuleJs = (() => {
     }
 
     let script_text = await fetchText(moduleUrl);
+
+    if (hasAmdDefineCallExpression(script_text)) {
+      const module = await loadModuleAmd(script_text, moduleUrl);
+      if (typeof module === "object" || typeof module === "function") {
+        if (!module.default) {
+          module.default = module;
+          console.warn("amd 模块没有 default 属性", moduleUrl);
+        }
+      }
+      moduleResolve(module);
+      return moduleCache[key];
+    }
 
     const useExposeModule = (moduleResolve) => {
       return (callModule) => {
@@ -112,7 +158,8 @@ function useDefineComponent(Vue, template, resolve) {
 var loadModuleVue = (function (Vue, less) {
 
   const moduleCache = {};
-  const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
+  const AsyncFunction = Object.getPrototypeOf(async function () {
+  }).constructor;
 
   async function loadModuleVue(moduleUrl, isCache = true) {
 
@@ -220,12 +267,19 @@ var loadAsyncComponent = (() => {
   return loadAsyncComponent;
 })();
 
+
+// ==================  处理 模块 入口 ==================
+
+
 // TODO: 加载自定义模块, 同时并行加载, 同时用到一个模块, 可能会重复请求记载, 存在锁问题, 使用 Promise 解决
 var loadModule = (() => {
   const moduleCache = {};
 
   const moduleMap = {
-    'vue': Vue,
+    "vue": () => {
+      Vue.default = Vue;
+      return Vue
+    },
   }
 
   async function loadModule(moduleUrl, isCache = true) {
@@ -240,7 +294,7 @@ var loadModule = (() => {
     }
 
     if (moduleMap[moduleUrl]) {
-      moduleResolve(moduleMap[moduleUrl]);
+      moduleResolve(moduleMap[moduleUrl]());
       return moduleCache[moduleUrl];
     }
 
@@ -334,6 +388,11 @@ async function awaitLock(fn, timeOut = 1000) {
   }
 }
 
+
+function runModuleMJs(filePath) {
+  loadModule(filePath, false);
+}
+
 function myEvalSkipAmd(text) {
   let define2 = window.define;
   let require2 = window.require;
@@ -343,6 +402,7 @@ function myEvalSkipAmd(text) {
   window.define = define2;
   window.require = require2;
 }
+
 function loadStyleLink(url) {
   let ID = url.split("/").join("_");
 
