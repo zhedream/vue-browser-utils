@@ -121,3 +121,11 @@ m 模块 使用 esm 语法, 无需打包, 直接在浏览器中运行
 兼容性: JavaScript 的 ECMAScript 2017（ES8）
 
 外部使用 loadModule 加载模块
+
+新增模块引入支持
+
+引入 Amd 模块
+
+支持 ES6 模块, AST 转换成 自定义模块语法
+
+支持 .vue 文件

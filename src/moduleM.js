@@ -53,11 +53,51 @@ function resolveModule() {
   return [moduleResolve, moduleReject, p];
 }
 
+async function loadModuleJsText(script_text) {
+
+  const AsyncFunction = Object.getPrototypeOf(async function () {
+  }).constructor;
+
+  let [moduleResolve, moduleReject, p] = resolveModule();
+
+  if (hasAmdDefineCallExpression(script_text)) {
+    const module = await loadModuleAmd(script_text, moduleUrl);
+    if (typeof module === "object" || typeof module === "function") {
+      if (!module.default) {
+        module.default = module;
+        console.warn("amd 模块没有 default 属性", moduleUrl);
+      }
+    }
+    moduleResolve(module);
+    return moduleCache[key];
+  }
+
+  const exposeModule = (callModule) => {
+    // 接收一个普通 vue 组件对象, 或 Promise 对象
+    const mod = callModule();
+    moduleResolve(mod);
+    return mod;
+  }
+
+  // console.log(script_text);
+  script_text = transformCodeToExposeModule(script_text);
+  // console.log("script_text: \n", script_text)
+
+  const fn = new AsyncFunction("exposeModule", script_text);
+  const mod = await fn(exposeModule).catch((e) => {
+    console.error("加载模块失败", e, script_text,);
+    moduleReject();
+  });
+
+  // 兼容 代码片段 return 写法. 如 `class A{} ; return {A}`
+  moduleResolve(mod);
+
+  return p;
+}
+
 var loadModuleJs = (() => {
 
   const moduleCache = {};
-  const AsyncFunction = Object.getPrototypeOf(async function () {
-  }).constructor;
 
   async function loadModuleJs(moduleUrl, isCache = true) {
 
@@ -73,41 +113,7 @@ var loadModuleJs = (() => {
 
     let script_text = await fetchText(moduleUrl);
 
-    if (hasAmdDefineCallExpression(script_text)) {
-      const module = await loadModuleAmd(script_text, moduleUrl);
-      if (typeof module === "object" || typeof module === "function") {
-        if (!module.default) {
-          module.default = module;
-          console.warn("amd 模块没有 default 属性", moduleUrl);
-        }
-      }
-      moduleResolve(module);
-      return moduleCache[key];
-    }
-
-    const useExposeModule = (moduleResolve) => {
-      return (callModule) => {
-        // 接收一个普通 vue 组件对象, 或 Promise 对象
-        const mod = callModule();
-        moduleResolve(mod);
-        return mod;
-      }
-    };
-
-    const exposeModule = useExposeModule(moduleResolve);
-
-    // console.log(script_text);
-    script_text = transformCodeToExposeModule(script_text);
-    // console.log("script_text: \n", script_text)
-
-    const fn = new AsyncFunction("exposeModule", script_text);
-    const mod = await fn(exposeModule).catch((e) => {
-      console.error("加载模块失败", moduleUrl, e);
-      moduleReject();
-    })
-
-    // 兼容 代码片段 return 写法. 如 `class A{} ; return {A}`
-    moduleResolve(mod);
+    loadModuleJsText(script_text).then(moduleResolve).catch(moduleReject);
 
     return moduleCache[key];
   }
@@ -128,7 +134,7 @@ function transformDefineComponent(str) {
   }
 
 
-  // 匹配出 export default { ... } 中的内容
+  // 匹配出 export default { ... } 中的内容,  刚好少一个 }
   let reg = /(?<=export default\s{)(.*)(?=})/s;
   let result = str.match(reg);
 
@@ -389,8 +395,18 @@ async function awaitLock(fn, timeOut = 1000) {
 }
 
 
-function runModuleMJs(filePath) {
-  loadModule(filePath, false);
+// 运行 m.js 模块
+async function runModuleMJs(filePath) {
+  await loadModule(filePath, false);
+}
+
+// 将 vue 组件挂在在 eleOrSelector 上
+async function runModuleMVue(filePath, eleOrSelector, isCache = true) {
+  let App = await loadModule(filePath, isCache).then(e => e.default);
+  new Vue({
+    render: (h) => h(App),
+  }).$mount(eleOrSelector);
+
 }
 
 function myEvalSkipAmd(text) {
