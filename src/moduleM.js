@@ -10,6 +10,30 @@ function fetchText(url) {
   return fetch(url, { cache: "no-cache" }).then((res) => res.text());
 }
 
+// ===  scss ===
+// 1. 引入：Sass。https://cdnjs.cloudflare.com/ajax/libs/sass.js/0.11.1/sass.min.js
+// 2. 必须下载本地: sass.worker.js 。https://cdnjs.cloudflare.com/ajax/libs/sass.js/0.11.1/sass.worker.js
+var sass;
+
+function getSass() {
+  if (sass) return sass;
+  Sass.setWorkerUrl("sass.worker.js");
+  sass = new Sass();
+  return sass;
+}
+
+function compileScssToCss(scss) {
+  return new Promise((resolve, reject) => {
+    getSass().compile(scss, (result) => {
+      if (result.status === 0) {
+        resolve(result.text);
+      } else {
+        reject(result);
+      }
+    });
+  });
+}
+
 // ==================  处理 amd 模块 ==================
 function hasAmdDefineCallExpression(codeString) {
   // 使用正则表达式来匹配 "define" 后面跟随任意数量的空白字符，然后是一个左括号 "("，
@@ -53,7 +77,7 @@ function resolveModule() {
 }
 
 // ES、AMD 模块
-async function loadModuleJsText(script_text) {
+async function loadModuleJsText(script_text, moduleUrl) {
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
   let [moduleResolve, moduleReject, p] = resolveModule();
@@ -67,7 +91,7 @@ async function loadModuleJsText(script_text) {
       }
     }
     moduleResolve(module);
-    return moduleCache[key];
+    return p;
   }
 
   const exposeModule = (callModule) => {
@@ -211,6 +235,14 @@ var loadModuleVue = (function (Vue, less) {
       let r = await less.render(style.innerHTML);
       style.innerHTML = r.css;
     }
+
+    // =======================  处理 scss 样式 =======================
+
+    if (style && style.lang === "scss") {
+      let css = await compileScssToCss(style.innerHTML);
+      style.innerHTML = css;
+    }
+
     // 加载样式
     if (style) {
       style.id = "style_" + key;
@@ -227,11 +259,23 @@ var loadModuleVue = (function (Vue, less) {
     // https://stackoverflow.com/questions/1197575/can-scripts-be-inserted-with-innerhtml
     const script = div.querySelector("script");
 
+    console.log("script", script);
+
     let script_text = script.innerHTML.trim();
 
     // 统一转换:  defineComponent
     // script_text = transformDefineComponent(script_text);
     // 代码转换:  import
+
+    const transformCode = window.transformVueTsx | window.transformTs;
+    if (script.lang === "ts") {
+      if (transformCode) script_text = transformCode(script_text);
+      else console.warn("transformTs|transformVueTsx is undefined");
+    } else if (script.lang === "tsx" && window.transformVueTsx) {
+      if (window.transformVueTsx) script_text = transformVueTsx(script_text);
+      else console.warn("transformVueTsx is undefined");
+    }
+
     const ast = transformCodeToExposeModule.parse(script_text, {
       sourceType: "module",
     });
@@ -362,13 +406,15 @@ var loadModule = (() => {
     },
   };
 
+  Object.assign(moduleMap, window.GlobalModuleMMap);
+
   /**
    *
    * @param url
    * @param cache {boolean|number}
    * @return {Promise<*>}
    */
-  async function loadModule(url, cache = true) {
+  async function loadModule(url, cache = 3000) {
     const originModuleUrl = url;
     let moduleUrl = originModuleUrl;
 
@@ -504,7 +550,7 @@ async function runModuleMJs(filePath) {
 }
 
 // 将 vue 组件挂在在 eleOrSelector 上
-async function mountModuleVue(filePath, eleOrSelector, cache = true) {
+async function mountModuleVue(filePath, eleOrSelector, cache = 3000) {
   let App = await loadModule(filePath, cache).then((e) => e.default);
   new Vue({
     render: (h) => h(App),

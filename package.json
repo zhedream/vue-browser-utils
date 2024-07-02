@@ -1,6 +1,6 @@
 {
   "name": "vue-browser-utils",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "在 browser 环境中更优雅地编写 Vue 组件",
   "main": "vue-browser-utils.js",
   "directories": {
@@ -9,7 +9,9 @@
   "scripts": {
     "build": "browserify src/index.js --s vueBrowserUtils > vue-browser-utils.js",
     "server": "http-server",
-    "transformCodeToExposeModule": "browserify ./src/transformCodeToExposeModule.js --s transformCodeToExposeModule > transformCodeToExposeModule.min.js"
+    "transformCodeToExposeModule": "browserify ./src/transformCodeToExposeModule.js --s transformCodeToExposeModule > transformCodeToExposeModule.min.js",
+    "transformVueTsx": "browserify ./src/transformVueTsx.js --s transformVueTsx > transformVueTsx.min.js",
+    "transformTs": "browserify ./src/transformTs.js --s transformTs > transformTs.min.js"
   },
   "author": "zhedream",
   "license": "MIT",
@@ -20,5 +22,16 @@
     "@babel/types": "^7.21.4",
     "browserify": "^17.0.0",
     "http-server": "^14.1.0"
+  },
+  "dependencies": {
+    "vue": "^2.6.10",
+    "@babel/preset-env": "^7.24.4",
+    "@babel/preset-typescript": "^7.24.1",
+    "@babel/standalone": "^7.24.4",
+    "babel-helper-vue-jsx-merge-props": "^2.0.3",
+    "babel-plugin-syntax-jsx": "^6.18.0",
+    "babel-plugin-transform-vue-jsx": "^3.7.0",
+    "babel-preset-env": "^1.7.0",
+    "babel-preset-typescript": "7.0.0-alpha.19"
   }
 }
