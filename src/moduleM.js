@@ -7,7 +7,7 @@ async function execScriptAsync(script_text) {
 }
 
 function fetchText(url) {
-  return fetch(url).then((res) => res.text());
+  return fetch(url, { cache: "no-cache" }).then((res) => res.text());
 }
 
 // ==================  处理 amd 模块 ==================
@@ -21,7 +21,6 @@ function hasAmdDefineCallExpression(codeString) {
 }
 
 function loadModuleAmd(script_text, moduleUrl) {
-
   let module;
 
   const define = (...args) => {
@@ -53,10 +52,9 @@ function resolveModule() {
   return [moduleResolve, moduleReject, p];
 }
 
+// ES、AMD 模块
 async function loadModuleJsText(script_text) {
-
-  const AsyncFunction = Object.getPrototypeOf(async function () {
-  }).constructor;
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
   let [moduleResolve, moduleReject, p] = resolveModule();
 
@@ -77,15 +75,28 @@ async function loadModuleJsText(script_text) {
     const mod = callModule();
     moduleResolve(mod);
     return mod;
-  }
+  };
 
-  // console.log(script_text);
+  //  console.log(script_text);
+  // 处理 ES 模块
   script_text = transformCodeToExposeModule(script_text);
   // console.log("script_text: \n", script_text)
 
+  // 处理 return 宏
+  script_text = script_text.replace("defineReturn", "return ");
+
+  script_text = `
+   try {
+    ${script_text}
+   } catch (e) {
+    console.error("加载模块失败", e);
+    moduleReject();
+   }
+  `;
+
   const fn = new AsyncFunction("exposeModule", script_text);
   const mod = await fn(exposeModule).catch((e) => {
-    console.error("加载模块失败", e, script_text,);
+    console.error("加载模块失败", e, script_text);
     moduleReject();
   });
 
@@ -96,50 +107,46 @@ async function loadModuleJsText(script_text) {
 }
 
 var loadModuleJs = (() => {
-
   const moduleCache = {};
 
-  async function loadModuleJs(moduleUrl, isCache = true) {
-
+  async function loadModuleJs(moduleUrl, cache = true) {
     let key = moduleUrl.split("/").join("_");
 
-    let [moduleResolve, moduleReject, p] = resolveModule();
+    let [moduleResolve, moduleReject, moduleJs] = resolveModule();
 
-    if (isCache && moduleCache[key]) {
+    if (moduleCache[key]) {
       return moduleCache[key];
     } else {
-      moduleCache[key] = p;
+      moduleCache[key] = moduleJs;
+      if (typeof cache === "number") {
+        setTimeout(() => (moduleCache[key] = null), cache);
+      } else if (cache === false) {
+        moduleCache[key] = undefined;
+      }
     }
 
     let script_text = await fetchText(moduleUrl);
 
     loadModuleJsText(script_text).then(moduleResolve).catch(moduleReject);
 
-    return moduleCache[key];
+    return moduleJs;
   }
 
   return loadModuleJs;
-
 })();
 
 // ==================  处理 vue 模块 ==================
 function transformDefineComponent(str) {
-
   if (str.indexOf("defineComponent") > -1) {
     return str;
   }
 
-  if (str.indexOf("export default") === -1) {
-    return str;
-  }
-
-
-  // 匹配出 export default { ... } 中的内容,  刚好少一个 }
-  let reg = /(?<=export default\s{)(.*)(?=})/s;
-  let result = str.match(reg);
-
-  // 替换掉 str 中 export default { } 的内容
-  let define = `
+  if (str.indexOf("export default") > -1) {
+    // 匹配出 export default { ... } 中的内容,  刚好少一个 }
+    let reg = /(?<=export default\s{)(.*)(?=})/s;
+    let result = str.match(reg);
+    // 替换掉 str 中 export default { } 的内容
+    let define = `
 defineComponent((Vue, template) => {
   return {
     ...Vue.compile(template),
@@ -147,9 +154,10 @@ defineComponent((Vue, template) => {
   };
 });
 `;
+    return str.replace(/export default {[\s\S]*}/, define);
+  }
 
-  return str.replace(/export default {[\s\S]*}/, define);
-
+  return str;
 }
 
 function useDefineComponent(Vue, template, resolve) {
@@ -162,23 +170,29 @@ function useDefineComponent(Vue, template, resolve) {
 }
 
 var loadModuleVue = (function (Vue, less) {
-
   const moduleCache = {};
-  const AsyncFunction = Object.getPrototypeOf(async function () {
-  }).constructor;
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
-  async function loadModuleVue(moduleUrl, isCache = true) {
-
+  /**
+   *
+   * @param moduleUrl
+   * @param cache {boolean|number}
+   * @return {Promise<*>}
+   */
+  async function loadModuleVue(moduleUrl, cache = true) {
     let key = moduleUrl.split("/").join("_");
 
-    let moduleResolve, moduleReject;
-    if (isCache && moduleCache[key]) {
+    const [moduleResolve, moduleReject, moduleVue] = resolveModule();
+
+    if (moduleCache[key]) {
       return moduleCache[key];
     } else {
-      moduleCache[key] = new Promise((resolve, reject) => {
-        moduleResolve = resolve;
-        moduleReject = reject;
-      });
+      moduleCache[key] = moduleVue;
+      if (typeof cache === "number") {
+        setTimeout(() => (moduleCache[key] = null), cache);
+      } else if (cache === false) {
+        moduleCache[key] = undefined;
+      }
     }
 
     let text = await fetchText(moduleUrl);
@@ -187,7 +201,7 @@ var loadModuleVue = (function (Vue, less) {
 
     // =======================  处理 template =======================
 
-    const template = div.querySelector("template").innerHTML;
+    const template = div.querySelector("template")?.innerHTML;
     const defineComponent = useDefineComponent(Vue, template, moduleResolve);
 
     // =======================  处理 less 样式 =======================
@@ -215,8 +229,8 @@ var loadModuleVue = (function (Vue, less) {
 
     let script_text = script.innerHTML.trim();
 
-    // 代码转换:  defineComponent
-    script_text = transformDefineComponent(script_text);
+    // 统一转换:  defineComponent
+    // script_text = transformDefineComponent(script_text);
     // 代码转换:  import
     const ast = transformCodeToExposeModule.parse(script_text, {
       sourceType: "module",
@@ -224,105 +238,196 @@ var loadModuleVue = (function (Vue, less) {
     transformCodeToExposeModule.transformImport(ast);
     script_text = transformCodeToExposeModule.generator(ast).code;
 
-    // 执行代码, 加载代码
-    //     const script_text_eval =
-    //       `
-    // (async ()=>{
-    //   try{
-    //     ${script_text}
-    //   }catch(e){
-    //     console.error('加载模块失败', url, e);
-    //     comReject();
-    //   }
-    // })();`;
-    //
-    //     eval(script_text_eval);
+    function handleDefineComponent() {
+      const fn = new AsyncFunction("defineComponent", script_text);
+      fn(defineComponent).catch((e) => {
+        console.error("加载模块失败", moduleUrl, e);
+        moduleReject();
+      });
+    }
 
-    const fn = new AsyncFunction("defineComponent", script_text);
-    fn(defineComponent).catch((e) => {
-      console.error("加载模块失败", moduleUrl, e);
+    async function handleExportDefault() {
+      let mod = await loadModuleJsText(script_text);
+      const options = mod.default;
+      if (template) {
+        // Object.assign(options, Vue.compile(template));
+        options.template = template;
+      }
+      moduleResolve({
+        default: options,
+      });
+    }
+
+    if (script_text.indexOf("export") > -1 && script_text.indexOf("default") > -1) {
+      handleExportDefault();
+    } else if (script_text.indexOf("defineComponent") > -1) {
+      handleDefineComponent();
+    } else {
+      console.error("异常 Vue 模块：", moduleUrl);
       moduleReject();
-    });
+    }
 
     div.remove();
     div = null;
 
-    return moduleCache[key];
+    return moduleVue;
   }
 
   return loadModuleVue;
-
 })(Vue, less);
 
 var loadAsyncComponent = (() => {
-
   const loadFnCache = {};
 
-  function loadAsyncComponent(url, isCache = true) {
+  /**
+   *
+   * @param url
+   * @param cache {boolean|number}
+   * @return {(function(): Promise<*>)}
+   */
+  function loadAsyncComponent(url, cache = true) {
     let key = url.split("/").join("_");
-
+    let [moduleResolve, moduleReject, module] = resolveModule();
     // 保证返回同一个函数, 保证同一个组件只加载一次
-    if (isCache && loadFnCache[key]) {
+    const loadFn = () => module;
+    if (loadFnCache[key]) {
       return loadFnCache[key];
     } else {
-      loadFnCache[key] = () => loadModule(url, isCache).then(mod => mod.default);
-      return loadFnCache[key];
+      loadFnCache[key] = loadFn;
+      if (typeof cache === "number") {
+        setTimeout(() => (loadFnCache[key] = null), cache);
+      } else if (cache === false) {
+        loadFnCache[key] = undefined;
+      }
     }
+    loadModule(url, cache).then((mod) => moduleResolve(mod.default), moduleReject);
+    return loadFn;
   }
 
   return loadAsyncComponent;
 })();
 
-
 // ==================  处理 模块 入口 ==================
 
+async function fileExist(jsNoduleUrl) {
+  return fetch(jsNoduleUrl, {
+    method: "HEAD",
+  })
+    .then((response) => {
+      if (response.ok) {
+        // 文件存在，服务器返回了200-299的状态码
+        console.log("文件存在");
+        return true;
+      } else if (response.status === 404) {
+        // 文件不存在，服务器返回了404状态码
+        console.log("文件不存在");
+        return false;
+      } else {
+        // 其它错误，如服务器错误（500状态码等）
+        console.log("发生了其它错误", response.status);
+        return Promise.reject();
+      }
+    })
+    .catch((error) => {
+      // 网络问题或其他异常
+      console.error("请求发生错误", error);
+      return Promise.reject(error);
+    });
+}
 
 // TODO: 加载自定义模块, 同时并行加载, 同时用到一个模块, 可能会重复请求记载, 存在锁问题, 使用 Promise 解决
+const moduleCache = {};
+
 var loadModule = (() => {
-  const moduleCache = {};
-
   const moduleMap = {
-    "vue": () => {
+    vue: () => {
       Vue.default = Vue;
-      return Vue
+      return Vue;
     },
-  }
+    "ant-design-vue": () => antd,
+    lodash: () => _,
+    dayjs: () => {
+      dayjs.default = dayjs;
+      return dayjs;
+    },
+    "v-region": () => window.vRegion,
+    echarts: () => echarts,
+    axios: () => {
+      window.axios.default = window.axios;
+      return window.axios;
+    },
+    "js-cookie": () => {
+      Cookies.default = Cookies;
+      return Cookies;
+    },
+  };
 
-  async function loadModule(moduleUrl, isCache = true) {
-    let moduleResolve, moduleReject;
-    if (isCache && moduleCache[moduleUrl]) {
-      return moduleCache[moduleUrl];
+  /**
+   *
+   * @param url
+   * @param cache {boolean|number}
+   * @return {Promise<*>}
+   */
+  async function loadModule(url, cache = true) {
+    const originModuleUrl = url;
+    let moduleUrl = originModuleUrl;
+
+    let [moduleResolve, moduleReject, module] = resolveModule();
+
+    if (moduleCache[originModuleUrl]) {
+      // 使用缓存
+      return moduleCache[originModuleUrl];
     } else {
-      moduleCache[moduleUrl] = new Promise((resolve, reject) => {
-        moduleResolve = resolve;
-        moduleReject = reject;
-      });
+      // 添加到缓存
+      moduleCache[originModuleUrl] = module;
+      if (typeof cache === "number") {
+        // 过期清空缓存
+        setTimeout(() => (moduleCache[originModuleUrl] = null), cache);
+      } else if (cache === false) {
+        // 不缓存
+        moduleCache[originModuleUrl] = undefined;
+      }
     }
 
-    if (moduleMap[moduleUrl]) {
-      moduleResolve(moduleMap[moduleUrl]());
-      return moduleCache[moduleUrl];
+    // 全局引入模块
+    if (moduleMap[originModuleUrl]) {
+      if (moduleMap[originModuleUrl] instanceof Function) {
+        moduleResolve(moduleMap[originModuleUrl]());
+      } else {
+        moduleResolve(moduleMap[originModuleUrl]);
+      }
+      return module;
+    }
+
+    const endTsxExp = /\.tsx?$/;
+    const endsWithTsx = (str) => endTsxExp.test(str);
+
+    // 匹配 ts 对应编译的 js 文件。
+    // cli：babel a.js --out-file a.js --presets babel-preset-typescript --plugins babel-plugin-transform-vue-jsx
+    // webstorm: babel $FileDir$/$FileName$ --out-file $FileDir$/$FileNameWithoutExtension$.js --presets babel-preset-typescript --plugins babel-plugin-transform-vue-jsx
+    if (endsWithTsx(moduleUrl)) {
+      let jsNoduleUrl = moduleUrl.replace(endTsxExp, ".js");
+      let exist = await fileExist(jsNoduleUrl);
+      if (exist) {
+        moduleUrl = jsNoduleUrl;
+      }
     }
 
     // .js
     if (moduleUrl.endsWith(".js")) {
-      loadModuleJs(moduleUrl, isCache).then((mod) => {
-        moduleResolve(mod);
-      });
+      loadModuleJs(moduleUrl, cache).then(moduleResolve, moduleReject);
     }
     // .vue
     else if (moduleUrl.endsWith(".vue")) {
-      loadModuleVue(moduleUrl, isCache).then((mod) => {
-        moduleResolve(mod);
-      });
+      loadModuleVue(moduleUrl, cache).then(moduleResolve, moduleReject);
+    } else if (moduleUrl.endsWith(".ts")) {
+      throw new Error("未实现 ts 模块加载, 需要编译生成对应 js 文件");
     } else {
-      console.log("未知模块类型,按 .m.vue 加载", moduleUrl)
-      loadModuleVue(moduleUrl, isCache).then((mod) => {
-        moduleResolve(mod);
-      });
+      console.log("未知模块类型,按 .m.vue 加载", moduleUrl);
+      loadModuleVue(moduleUrl, cache).then(moduleResolve, moduleReject);
     }
 
-    return moduleCache[moduleUrl];
+    return module;
   }
 
   return loadModule;
@@ -375,7 +480,6 @@ function loadScript(url, isEsm = false, cache = false) {
     });
   }
 
-
   function removeScript() {
     document.body.removeChild(script);
   }
@@ -394,19 +498,17 @@ async function awaitLock(fn, timeOut = 1000) {
   }
 }
 
-
 // 运行 m.js 模块
 async function runModuleMJs(filePath) {
   await loadModule(filePath, false);
 }
 
 // 将 vue 组件挂在在 eleOrSelector 上
-async function runModuleMVue(filePath, eleOrSelector, isCache = true) {
-  let App = await loadModule(filePath, isCache).then(e => e.default);
+async function mountModuleVue(filePath, eleOrSelector, cache = true) {
+  let App = await loadModule(filePath, cache).then((e) => e.default);
   new Vue({
     render: (h) => h(App),
   }).$mount(eleOrSelector);
-
 }
 
 function myEvalSkipAmd(text) {
@@ -442,4 +544,3 @@ function loadStyleLink(url) {
     document.body.removeChild(link);
   }
 }
-
