@@ -46,8 +46,9 @@ function hasAmdDefineCallExpression(codeString) {
 
 function loadModuleAmd(script_text, moduleUrl) {
   let module;
-
+  const moduleCtx = {};
   const define = (...args) => {
+    console.log("define", args, moduleCtx);
     // define(()=>{})
     // define([],()=>{})
     // define('',[],()=>{})
@@ -56,14 +57,15 @@ function loadModuleAmd(script_text, moduleUrl) {
     if (module !== undefined) {
       console.warn("重复加载模块", moduleUrl);
     }
-    module = callModule();
+    module = callModule(moduleCtx);
   };
   define.amd = { loadModuleAmd: true };
 
   // 依赖注入
   let fn = new Function("define", script_text);
   fn(define);
-  return module;
+  console.log("moduleCtx", moduleCtx);
+  return module || moduleCtx;
 }
 
 // ==================  处理 js 模块 ==================
@@ -159,6 +161,51 @@ var loadModuleJs = (() => {
   return loadModuleJs;
 })();
 
+// ==================  处理 tsx 模块 ==================
+
+var loadModuleTsx = (() => {
+  const moduleCache = {};
+
+  /**
+   *
+   * @param moduleUrl {string}
+   * @param cache {boolean|number}
+   * @return {Promise<*>}
+   */
+  async function loadModuleTsx(moduleUrl, cache = true) {
+    let key = moduleUrl.split("/").join("_");
+
+    let [moduleResolve, moduleReject, moduleTs] = resolveModule();
+
+    if (moduleCache[key]) {
+      return moduleCache[key];
+    } else {
+      moduleCache[key] = moduleTs;
+      if (typeof cache === "number") {
+        setTimeout(() => (moduleCache[key] = null), cache);
+      } else if (cache === false) {
+        moduleCache[key] = undefined;
+      }
+    }
+
+    let script_text = await fetchText(moduleUrl);
+
+    /**
+     * 剔除 ts 类型
+     * @type {*}
+     */
+    const transformCode = window.transformVueTsx || window.transformTs;
+    if (transformCode) script_text = transformCode(script_text);
+    else console.warn("transformTs|transformVueTsx is undefined");
+
+    loadModuleJsText(script_text).then(moduleResolve).catch(moduleReject);
+
+    return moduleTs;
+  }
+
+  return loadModuleTsx;
+})();
+
 // ==================  处理 vue 模块 ==================
 function transformDefineComponent(str) {
   if (str.indexOf("defineComponent") > -1) {
@@ -193,7 +240,7 @@ function useDefineComponent(Vue, template, resolve) {
   };
 }
 
-var loadModuleVue = (function (Vue, less) {
+var loadModuleVue = (function () {
   const moduleCache = {};
   const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
@@ -224,7 +271,7 @@ var loadModuleVue = (function (Vue, less) {
     div.innerHTML = text;
 
     // =======================  处理 template =======================
-
+    const Vue = await loadModule("vue");
     const template = div.querySelector("template")?.innerHTML;
     const defineComponent = useDefineComponent(Vue, template, moduleResolve);
 
@@ -232,6 +279,7 @@ var loadModuleVue = (function (Vue, less) {
 
     const style = div.querySelector("style");
     if (style && style.lang === "less") {
+      const less = await loadModule("less", true);
       let r = await less.render(style.innerHTML);
       style.innerHTML = r.css;
     }
@@ -267,7 +315,7 @@ var loadModuleVue = (function (Vue, less) {
     // script_text = transformDefineComponent(script_text);
     // 代码转换:  import
 
-    const transformCode = window.transformVueTsx | window.transformTs;
+    const transformCode = window.transformVueTsx || window.transformTs;
     if (script.lang === "ts") {
       if (transformCode) script_text = transformCode(script_text);
       else console.warn("transformTs|transformVueTsx is undefined");
@@ -318,7 +366,7 @@ var loadModuleVue = (function (Vue, less) {
   }
 
   return loadModuleVue;
-})(Vue, less);
+})();
 
 var loadAsyncComponent = (() => {
   const loadFnCache = {};
@@ -414,7 +462,8 @@ var loadModule = (() => {
    * @param cache {boolean|number}
    * @return {Promise<*>}
    */
-  async function loadModule(url, cache = 3000) {
+  async function loadModule(url, cache = true) {
+    console.log("loadModule", url);
     const originModuleUrl = url;
     let moduleUrl = originModuleUrl;
 
@@ -455,22 +504,41 @@ var loadModule = (() => {
       let jsNoduleUrl = moduleUrl.replace(endTsxExp, ".js");
       let exist = await fileExist(jsNoduleUrl);
       if (exist) {
-        moduleUrl = jsNoduleUrl;
+        loadModuleJs(jsNoduleUrl, cache).then(moduleResolve, moduleReject);
+      } else {
+        loadModuleTsx(moduleUrl, cache).then(moduleResolve, moduleReject);
       }
     }
-
     // .js
-    if (moduleUrl.endsWith(".js")) {
+    else if (moduleUrl.endsWith(".js")) {
       loadModuleJs(moduleUrl, cache).then(moduleResolve, moduleReject);
     }
     // .vue
     else if (moduleUrl.endsWith(".vue")) {
       loadModuleVue(moduleUrl, cache).then(moduleResolve, moduleReject);
-    } else if (moduleUrl.endsWith(".ts")) {
-      throw new Error("未实现 ts 模块加载, 需要编译生成对应 js 文件");
     } else {
-      console.log("未知模块类型,按 .m.vue 加载", moduleUrl);
-      loadModuleVue(moduleUrl, cache).then(moduleResolve, moduleReject);
+      // 补全后缀
+      const extensions = ["js", "ts", "tsx"];
+      let exist = false;
+      for (let ext of extensions) {
+        let newUrl = moduleUrl + "." + ext;
+        exist = await fileExist(newUrl);
+        if (exist) {
+          moduleUrl = newUrl;
+          if (ext === "js") {
+            loadModuleJs(moduleUrl, cache).then(moduleResolve, moduleReject);
+          } else {
+            loadModuleTsx(moduleUrl, cache).then(moduleResolve, moduleReject);
+          }
+          break;
+        }
+      }
+
+      if (!exist) {
+        // .html 可能是 vue 模块
+        console.log("未知模块类型,按 .m.vue 加载", moduleUrl);
+        loadModuleVue(moduleUrl, cache).then(moduleResolve, moduleReject);
+      }
     }
 
     return module;
@@ -550,7 +618,8 @@ async function runModuleMJs(filePath) {
 }
 
 // 将 vue 组件挂在在 eleOrSelector 上
-async function mountModuleVue(filePath, eleOrSelector, cache = 3000) {
+async function mountModuleVue(filePath, eleOrSelector, cache = true) {
+  const Vue = await loadModule("vue", true);
   let App = await loadModule(filePath, cache).then((e) => e.default);
   new Vue({
     render: (h) => h(App),
