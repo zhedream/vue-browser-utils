@@ -59,27 +59,40 @@ function transformImportFrom(ast) {
 
       // 替换原有的import声明
       path.replaceWithMultiple(importStatements);
+    },
+    CallExpression(path) {
+      if (path.node.callee.type === 'Import') {
+        const source = path.node.arguments[0].value; // 获取模块路径
+
+        // 创建 loadModule() 调用表达式
+        const loadModuleCall = t.callExpression(t.identifier("loadModule"), [t.stringLiteral(source)]);
+
+        // 替换 import() 为 loadModule()
+        path.replaceWith(loadModuleCall);
+      }
     }
   });
 }
 
 
 // 示例使用
-// const code = `
-// import * as M2 from 'javascript/menu2.m.js';
+const code = `
+import * as M2 from 'javascript/menu2.m.js';
 
-// import * as M3 from 'javascript/menu2.m.js';
+import * as M3 from 'javascript/menu2.m.js';
 
-// import Mu , {menu as f,uu,aa} from 'javascript/menu.m.js';
+import Mu , {menu as f,uu,aa} from 'javascript/menu.m.js';
 
-// import User2  from 'javascript/menu.m.js';
-// `;
+import User2  from 'javascript/menu.m.js';
 
-// const ast = parser.parse(code, { sourceType: 'module' });
+import('javascript/user.m.js').then((module) => {
+  console.log(module);
+});
+`;
 
-// transformImportFrom(ast);
+const ast = parser.parse(code, { sourceType: 'module' });
 
-// const output = generate(ast).code;
-// console.log(output);
+transformImportFrom(ast);
 
-module.exports = transformImportFrom;
+const output = generate(ast).code;
+console.log(output);

@@ -79,6 +79,17 @@ function transformImportFrom(ast) {
 
       // 替换原有的import声明
       path.replaceWithMultiple(importStatements);
+    },
+    CallExpression(path) {
+      if (path.node.callee.type === 'Import') {
+        const source = path.node.arguments[0].value; // 获取模块路径
+
+        // 创建 loadModule() 调用表达式
+        const loadModuleCall = t.callExpression(t.identifier("loadModule"), [t.stringLiteral(source)]);
+
+        // 替换 import() 为 loadModule()
+        path.replaceWith(loadModuleCall);
+      }
     }
   });
 }
