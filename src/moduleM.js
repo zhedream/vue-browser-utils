@@ -13,16 +13,27 @@ function fetchText(url) {
 // ===  scss ===
 // 1. 引入：Sass。https://cdnjs.cloudflare.com/ajax/libs/sass.js/0.11.1/sass.min.js
 // 2. 必须下载本地: sass.worker.js 。https://cdnjs.cloudflare.com/ajax/libs/sass.js/0.11.1/sass.worker.js
-var sass;
+let sassInstance;
 
 function getSass() {
-  if (sass) return sass;
-  Sass.setWorkerUrl("sass.worker.js");
-  sass = new Sass();
-  return sass;
+  try {
+    if (sassInstance) {
+      return sassInstance;
+    }
+    Sass.setWorkerUrl("js/sass.worker.js");
+    sassInstance = new Sass();
+    return sassInstance;
+  } catch (e) {
+    console.error("sass 加载失败", e);
+  }
 }
 
-function compileScssToCss(scss) {
+async function compileScssToCss(scss) {
+  if (typeof Sass === "undefined") {
+    await fetchText("https://cdnjs.cloudflare.com/ajax/libs/sass.js/0.11.1/sass.min.js").then(
+      myEvalSkipAmd
+    );
+  }
   return new Promise((resolve, reject) => {
     getSass().compile(scss, (result) => {
       if (result.status === 0) {
@@ -307,7 +318,7 @@ var loadModuleVue = (function () {
     // https://stackoverflow.com/questions/1197575/can-scripts-be-inserted-with-innerhtml
     const script = div.querySelector("script");
 
-    console.log("script", script);
+    // console.log("script", script);
 
     let script_text = script.innerHTML.trim();
 
@@ -448,6 +459,7 @@ var loadModule = (() => {
       window.axios.default = window.axios;
       return window.axios;
     },
+    less: () => less,
     "js-cookie": () => {
       Cookies.default = Cookies;
       return Cookies;
@@ -462,8 +474,8 @@ var loadModule = (() => {
    * @param cache {boolean|number}
    * @return {Promise<*>}
    */
-  async function loadModule(url, cache = true) {
-    console.log("loadModule", url);
+  async function loadModule(url, cache = 3000) {
+    // console.log("loadModule", url);
     const originModuleUrl = url;
     let moduleUrl = originModuleUrl;
 
@@ -618,7 +630,7 @@ async function runModuleMJs(filePath) {
 }
 
 // 将 vue 组件挂在在 eleOrSelector 上
-async function mountModuleVue(filePath, eleOrSelector, cache = true) {
+async function mountModuleVue(filePath, eleOrSelector, cache = 3000) {
   const Vue = await loadModule("vue", true);
   let App = await loadModule(filePath, cache).then((e) => e.default);
   new Vue({
