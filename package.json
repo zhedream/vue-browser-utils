@@ -1,6 +1,6 @@
 {
   "name": "vue-browser-utils",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "在 browser 环境中更优雅地编写 Vue 组件",
   "main": "vue-browser-utils.js",
   "directories": {

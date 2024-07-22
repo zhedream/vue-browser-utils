@@ -28,6 +28,11 @@ function getSass() {
   }
 }
 
+/**
+ * 编译 scss 为 css
+ * @param scss {string}
+ * @return {Promise<string>}
+ */
 async function compileScssToCss(scss) {
   if (typeof Sass === "undefined") {
     await fetchText("https://cdnjs.cloudflare.com/ajax/libs/sass.js/0.11.1/sass.min.js").then(
@@ -43,6 +48,22 @@ async function compileScssToCss(scss) {
       }
     });
   });
+}
+
+// === less ===
+
+/**
+ * 编译 less 为 css
+ * @param lessCss {string}
+ * @return {Promise<string>}
+ */
+async function compileLessToCss(lessCss) {
+  let less = await loadModule("less", true);
+  try {
+    return less.render(lessCss).then((r) => r.css);
+  } catch (e) {
+    console.error("less 加载失败", e);
+  }
 }
 
 // ==================  处理 amd 模块 ==================
@@ -172,7 +193,8 @@ var loadModuleJs = (() => {
   return loadModuleJs;
 })();
 
-// ==================  处理 tsx 模块 ==================
+// ==================  实时编译 处理 tsx 模块 ==================
+// ===  需引入 transformTs.min.js 或 transformTsx.min.js ======
 
 var loadModuleTsx = (() => {
   const moduleCache = {};
@@ -286,29 +308,40 @@ var loadModuleVue = (function () {
     const template = div.querySelector("template")?.innerHTML;
     const defineComponent = useDefineComponent(Vue, template, moduleResolve);
 
-    // =======================  处理 less 样式 =======================
-
     const style = div.querySelector("style");
-    if (style && style.lang === "less") {
-      const less = await loadModule("less", true);
-      let r = await less.render(style.innerHTML);
-      style.innerHTML = r.css;
-    }
-
-    // =======================  处理 scss 样式 =======================
 
     if (style && style.lang === "scss") {
-      let css = await compileScssToCss(style.innerHTML);
-      style.innerHTML = css;
+      style.innerHTML = await compileScssToCss(style.innerHTML);
     }
 
     // 加载样式
     if (style) {
-      style.id = "style_" + key;
-      if (document.getElementById("style_" + key)) {
-        document.getElementById("style_" + key).innerHTML = style.innerHTML;
-      } else {
-        document.head.appendChild(style);
+      function applyStyle() {
+        style.id = "style_" + key;
+        if (document.getElementById(style.id)) {
+          document.getElementById(style.id).innerHTML = style.innerHTML;
+        } else {
+          document.head.appendChild(style);
+        }
+      }
+
+      // =======================  处理 less 样式 =======================
+      if (style && style.lang === "less") {
+        compileLessToCss(style.innerHTML).then((compileCss) => {
+          style.innerHTML = compileCss;
+          applyStyle();
+        });
+      }
+      // =======================  处理 scss 样式 =======================
+      else if (style && style.lang === "scss") {
+        compileScssToCss(style.innerHTML).then((compileCss) => {
+          style.innerHTML = compileCss;
+          applyStyle();
+        });
+      }
+      // == 普通 css
+      else {
+        applyStyle();
       }
     }
 
@@ -474,7 +507,7 @@ var loadModule = (() => {
    * @param cache {boolean|number}
    * @return {Promise<*>}
    */
-  async function loadModule(url, cache = 3000) {
+  async function loadModule(url, cache = true) {
     // console.log("loadModule", url);
     const originModuleUrl = url;
     let moduleUrl = originModuleUrl;
@@ -630,7 +663,7 @@ async function runModuleMJs(filePath) {
 }
 
 // 将 vue 组件挂在在 eleOrSelector 上
-async function mountModuleVue(filePath, eleOrSelector, cache = 3000) {
+async function mountModuleVue(filePath, eleOrSelector, cache = true) {
   const Vue = await loadModule("vue", true);
   let App = await loadModule(filePath, cache).then((e) => e.default);
   new Vue({
