@@ -170,7 +170,7 @@ style 也支持 less, scss 需要引入库依赖。
 
 ## js/ts/tsx 模块的引入
 
-模块导入的缺陷。需要已根路径为基准，不支持相对路径。不支持循环引用。
+**模块导入的缺陷**：需要以根路径为基准,保证路径唯一且一致，不支持相对路径。不支持循环引用。
 
 ```js
 import { sum } from "/xx/sum.js"; // 不推荐，编辑器不友好
@@ -233,3 +233,53 @@ npx babel server.ts  --out-file server.js  --presets babel-preset-typescript
     文件类型： TypeScript
 
     实参：$FileDir$/$FileName$  --out-file  $FileDir$//$FileNameWithoutExtension$.js  --presets babel-preset-typescript
+
+# 编译环境（最新 babel7 版本）
+
+vue2 的 jsx playground 在线编译环境
+
+https://jsx-vue2-playground.netlify.app/
+
+## babel7 standalone 代码编译 tsx
+
+standalone 内置 typescript 预设
+
+```bash
+pnpm i @babel/standalone @vue/babel-preset-jsx -D
+pnpm i @vue/babel-helper-vue-jsx-merge-props vue@2.7.16
+```
+
+## babel7 cli 编译 tsx
+
+```bash
+pnpm i @babel/cli @babel/preset-typescript -D
+pnpm i @vue/babel-preset-jsx -D
+pnpm i @vue/babel-helper-vue-jsx-merge-props vue@2.7.16
+```
+
+```js babel.config.js
+// cli + 配置
+// npx babel .\test.tsx  --out-file .\test.js
+module.exports = {
+  presets: [
+    [
+      '@vue/babel-preset-jsx',
+      {
+        vModel: false,
+        compositionAPI: 'native',
+      },
+    ],
+    '@babel/preset-typescript'
+    // ['@babel/preset-typescript', { isTSX: true, allExtensions: true }],
+  ],
+  plugins: []
+}
+```
+## babel7 core 自定义编译 import、export 语法
+
+src/transformExportFrom.js
+src/transformImportFrom.js
+
+```bash
+pnpm i @babel/parser @babel/traverse @babel/generator @babel/types -D
+```

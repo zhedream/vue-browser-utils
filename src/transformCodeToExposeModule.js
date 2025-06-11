@@ -1,12 +1,19 @@
-const parser = require("@babel/parser");
-const traverse = require("@babel/traverse").default;
-const generator = require("@babel/generator").default;
-const t = require("@babel/types");
+const babel = require("@babel/standalone");
+// const babel = require("@babel/standalone/babel.min.js");
+
+const parser = babel.packages.parser;
+const traverse = babel.packages.traverse.default;
+const generator = babel.packages.generator.default;
+const t = babel.packages.types;
+
+const transformVueTsx = require("./transformVueTsx");
+const transformTs = require("./transformTs");
+
+
 
 function transformCodeToExposeModule(code) {
   // 1. 生成 AST
-  const ast = parser.parse(code, { sourceType: "module" });
-
+  const ast = parser.parse(code, { sourceType: "module", plugins: ['jsx', 'typescript'] });
 
   // 2. 处理导出的标识符
   transformExportFrom(ast);
@@ -277,7 +284,14 @@ function transformExportFrom(ast) {
 transformCodeToExposeModule.transformExport = transformExportFrom;
 transformCodeToExposeModule.transformImport = transformImportFrom;
 
+transformCodeToExposeModule.babel = babel;
 transformCodeToExposeModule.parse = parser.parse;
 transformCodeToExposeModule.generator = generator;
+transformCodeToExposeModule.traverse = traverse;
+transformCodeToExposeModule.t = t;
+
+// 处理 ts jsx tsx (vue2版本)
+transformCodeToExposeModule.transformVueTsx = transformVueTsx;
+transformCodeToExposeModule.transformTs = transformTs;
 
 module.exports = transformCodeToExposeModule;

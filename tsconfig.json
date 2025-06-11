@@ -11,6 +11,9 @@
     // echarts.ts  两个 ts 问题
     "allowImportingTsExtensions": true,
     // [].find
-    "target": "ES2016"
+    "target": "ES2016",
+    "paths": {
+      "@/*": ["./*"]
+    }
   }
 }

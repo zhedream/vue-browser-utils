@@ -1,32 +1,10 @@
-const babel = require("@babel/standalone");
+// const babel = require("@babel/standalone");
+const babel = require("@babel/standalone/babel.min.js");
 
-const BabelPresetTypescript = require("babel-preset-typescript");
-
-
-// var output = babel.transform(
-//   `
-// const anExampleVariable = "Hello World"
-// console.log(anExampleVariable)
-
-// export const a:number = 1;
-
-// export const b = function(){
-//  return  123
-// }
-// `,
-//   {
-//     presets: [BabelPresetTypescript],
-//   }
-// );
-
-// console.log("output: ", output.code);
-
+// 在 @babel/standalone 中，typescript 预设是内置的，可以直接使用字符串 "typescript"
 module.exports = function(code) {
   return babel.transform(code, {
-    presets: [BabelPresetTypescript],
+    presets: ["typescript"],
+    filename: "input.ts",
   }).code;
 }
-
-
-// npm install --save-dev @babel/core @babel/cli @babel/preset-env babel-preset-typescript babel-plugin-transform-vue-jsx babel-plugin-syntax-jsx
-// npx babel .\test.tsx  --out-file .\test.js  --presets babel-preset-typescript --plugins babel-plugin-transform-vue-jsx

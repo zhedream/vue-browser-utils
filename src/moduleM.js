@@ -112,12 +112,12 @@ function resolveModule() {
 
 // ES、AMD 模块
 async function loadModuleJsText(script_text, moduleUrl) {
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
 
   let [moduleResolve, moduleReject, p] = resolveModule();
 
   if (hasAmdDefineCallExpression(script_text)) {
-    const module = await loadModuleAmd(script_text, moduleUrl);
+    const module = loadModuleAmd(script_text, moduleUrl);
     if (typeof module === "object" || typeof module === "function") {
       if (!module.default) {
         module.default = module;
@@ -137,20 +137,22 @@ async function loadModuleJsText(script_text, moduleUrl) {
 
   //  console.log(script_text);
   // 处理 ES 模块
-  script_text = transformCodeToExposeModule(script_text);
+  if (script_text.indexOf('import') > -1 || script_text.indexOf('export') > -1) {
+    script_text = transformCodeToExposeModule(script_text);
+  }
   // console.log("script_text: \n", script_text)
 
   // 处理 return 宏
   script_text = script_text.replace("defineReturn", "return ");
 
-  script_text = `
-   try {
-    ${script_text}
-   } catch (e) {
-    console.error("加载模块失败", e);
-    moduleReject();
-   }
-  `;
+  // script_text = `
+  //  try {
+  //   ${script_text}
+  //  } catch (e) {
+  //   console.error("加载模块失败", e);
+  //   moduleReject();
+  //  }
+  // `;
 
   const fn = new AsyncFunction("exposeModule", script_text);
   const mod = await fn(exposeModule).catch((e) => {
@@ -194,7 +196,6 @@ var loadModuleJs = (() => {
 })();
 
 // ==================  实时编译 处理 tsx 模块 ==================
-// ===  需引入 transformTs.min.js 或 transformTsx.min.js ======
 
 var loadModuleTsx = (() => {
   const moduleCache = {};
@@ -227,7 +228,7 @@ var loadModuleTsx = (() => {
      * 剔除 ts 类型
      * @type {*}
      */
-    const transformCode = window.transformVueTsx || window.transformTs;
+    const transformCode = transformCodeToExposeModule.transformVueTsx;
     if (transformCode) script_text = transformCode(script_text);
     else console.warn("transformTs|transformVueTsx is undefined");
 
@@ -275,7 +276,7 @@ function useDefineComponent(Vue, template, resolve) {
 
 var loadModuleVue = (function () {
   const moduleCache = {};
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
 
   /**
    *
@@ -359,12 +360,12 @@ var loadModuleVue = (function () {
     // script_text = transformDefineComponent(script_text);
     // 代码转换:  import
 
-    const transformCode = window.transformVueTsx || window.transformTs;
+    const transformCode = transformCodeToExposeModule.transformVueTsx || transformCodeToExposeModule.transformTs;
     if (script.lang === "ts") {
       if (transformCode) script_text = transformCode(script_text);
       else console.warn("transformTs|transformVueTsx is undefined");
-    } else if (script.lang === "tsx" && window.transformVueTsx) {
-      if (window.transformVueTsx) script_text = transformVueTsx(script_text);
+    } else if (script.lang === "tsx" && transformCodeToExposeModule.transformVueTsx) {
+      if (transformCodeToExposeModule.transformVueTsx) script_text = transformCodeToExposeModule.transformVueTsx(script_text);
       else console.warn("transformVueTsx is undefined");
     }
 
@@ -425,6 +426,10 @@ var loadAsyncComponent = (() => {
     let key = url.split("/").join("_");
     let [moduleResolve, moduleReject, module] = resolveModule();
     // 保证返回同一个函数, 保证同一个组件只加载一次
+    /**
+     *
+     * @return {Promise<*>}
+     */
     const loadFn = () => module;
     if (loadFnCache[key]) {
       return loadFnCache[key];
@@ -499,6 +504,46 @@ var loadModule = (() => {
     },
   };
 
+  /**
+   * 替换 @/ 为 base , 并移除后缀, 用于统一缓存模块
+   * @param url
+   * @param base
+   * @returns
+   */
+  function getCacheOriginUrl(url, base = '/') {
+    let processedUrl = url;
+
+    // 如果有 @/ 则替换为 base
+    if (processedUrl.startsWith('@/')) {
+      processedUrl = processedUrl.replace('@/', base.endsWith('/') ? base : base + '/');
+    }
+
+    // 如果后缀是 m.js js ts tsx 替换为空
+    const extensionsToRemove = ['.m.js', '.js', '.ts', '.tsx'];
+    for (const ext of extensionsToRemove) {
+      if (processedUrl.endsWith(ext)) {
+        processedUrl = processedUrl.slice(0, -ext.length);
+        break; // 只移除第一个匹配的扩展名
+      }
+    }
+
+    return processedUrl;
+  }
+
+  /**
+   * 替换 @/ 为 base ，用于获取模块
+   * @param url
+   * @param base
+   * @returns
+   */
+  function getBaseOriginUrl(url, base = '/') {
+    let processedUrl = url;
+    if (processedUrl.startsWith('@/')) {
+      processedUrl = processedUrl.replace('@/', base.endsWith('/') ? base : base + '/');
+    }
+    return processedUrl;
+  }
+
   Object.assign(moduleMap, window.GlobalModuleMMap);
 
   /**
@@ -509,32 +554,33 @@ var loadModule = (() => {
    */
   async function loadModule(url, cache = true) {
     // console.log("loadModule", url);
-    const originModuleUrl = url;
-    let moduleUrl = originModuleUrl;
+    const base = '/';
+    const cacheOriginModuleUrl = getCacheOriginUrl(url, base);
+    let moduleUrl = getBaseOriginUrl(url, base);
 
     let [moduleResolve, moduleReject, module] = resolveModule();
 
-    if (moduleCache[originModuleUrl]) {
+    if (moduleCache[cacheOriginModuleUrl]) {
       // 使用缓存
-      return moduleCache[originModuleUrl];
+      return moduleCache[cacheOriginModuleUrl];
     } else {
       // 添加到缓存
-      moduleCache[originModuleUrl] = module;
+      moduleCache[cacheOriginModuleUrl] = module;
       if (typeof cache === "number") {
         // 过期清空缓存
-        setTimeout(() => (moduleCache[originModuleUrl] = null), cache);
+        setTimeout(() => (moduleCache[cacheOriginModuleUrl] = null), cache);
       } else if (cache === false) {
         // 不缓存
-        moduleCache[originModuleUrl] = undefined;
+        moduleCache[cacheOriginModuleUrl] = undefined;
       }
     }
 
     // 全局引入模块
-    if (moduleMap[originModuleUrl]) {
-      if (moduleMap[originModuleUrl] instanceof Function) {
-        moduleResolve(moduleMap[originModuleUrl]());
+    if (moduleMap[cacheOriginModuleUrl]) {
+      if (moduleMap[cacheOriginModuleUrl] instanceof Function) {
+        moduleResolve(moduleMap[cacheOriginModuleUrl]());
       } else {
-        moduleResolve(moduleMap[originModuleUrl]);
+        moduleResolve(moduleMap[cacheOriginModuleUrl]);
       }
       return module;
     }
@@ -563,7 +609,7 @@ var loadModule = (() => {
       loadModuleVue(moduleUrl, cache).then(moduleResolve, moduleReject);
     } else {
       // 补全后缀
-      const extensions = ["js", "ts", "tsx"];
+      const extensions = ['m.js', "js", "ts", "tsx"];
       let exist = false;
       for (let ext of extensions) {
         let newUrl = moduleUrl + "." + ext;

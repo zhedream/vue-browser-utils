@@ -1,5 +1,5 @@
 import Vue, { h } from "vue";
-import BComponent from "./a.m.vue";
+import BComponent from "./count.vue";
 import { requireModule } from "../vue-browser-utils.js";
 console.log(requireModule);
 import Demo2 from "../components/demo2/demo2.js";
