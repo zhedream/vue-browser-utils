@@ -476,6 +476,46 @@ async function fileExist(jsNoduleUrl) {
     });
 }
 
+/**
+ * 替换 @/ 为 base , 并移除后缀, 用于统一缓存模块
+ * @param url
+ * @param base
+ * @returns
+ */
+function getModuleCacheId(url, base = '/') {
+  let processedUrl = url;
+
+  // 如果有 @/ 则替换为 base
+  if (processedUrl.startsWith('@/')) {
+    processedUrl = processedUrl.replace('@/', base.endsWith('/') ? base : base + '/');
+  }
+
+  // 如果后缀是 m.js js ts tsx 替换为空
+  const extensionsToRemove = ['.m.js', '.js', '.ts', '.tsx'];
+  for (const ext of extensionsToRemove) {
+    if (processedUrl.endsWith(ext)) {
+      processedUrl = processedUrl.slice(0, -ext.length);
+      break; // 只移除第一个匹配的扩展名
+    }
+  }
+
+  return processedUrl;
+}
+
+/**
+ * 替换 @/ 为 base ，用于获取模块
+ * @param url
+ * @param base
+ * @returns
+ */
+function getModuleBaseUrl(url, base = '/') {
+  let processedUrl = url;
+  if (processedUrl.startsWith('@/')) {
+    processedUrl = processedUrl.replace('@/', base.endsWith('/') ? base : base + '/');
+  }
+  return processedUrl;
+}
+
 // TODO: 加载自定义模块, 同时并行加载, 同时用到一个模块, 可能会重复请求记载, 存在锁问题, 使用 Promise 解决
 const moduleCache = {};
 
@@ -502,47 +542,10 @@ var loadModule = (() => {
       Cookies.default = Cookies;
       return Cookies;
     },
+    '@vue/babel-helper-vue-jsx-merge-props': () => {
+      return loadModule('@/examples/mergeJsxProps.js');
+    }
   };
-
-  /**
-   * 替换 @/ 为 base , 并移除后缀, 用于统一缓存模块
-   * @param url
-   * @param base
-   * @returns
-   */
-  function getCacheOriginUrl(url, base = '/') {
-    let processedUrl = url;
-
-    // 如果有 @/ 则替换为 base
-    if (processedUrl.startsWith('@/')) {
-      processedUrl = processedUrl.replace('@/', base.endsWith('/') ? base : base + '/');
-    }
-
-    // 如果后缀是 m.js js ts tsx 替换为空
-    const extensionsToRemove = ['.m.js', '.js', '.ts', '.tsx'];
-    for (const ext of extensionsToRemove) {
-      if (processedUrl.endsWith(ext)) {
-        processedUrl = processedUrl.slice(0, -ext.length);
-        break; // 只移除第一个匹配的扩展名
-      }
-    }
-
-    return processedUrl;
-  }
-
-  /**
-   * 替换 @/ 为 base ，用于获取模块
-   * @param url
-   * @param base
-   * @returns
-   */
-  function getBaseOriginUrl(url, base = '/') {
-    let processedUrl = url;
-    if (processedUrl.startsWith('@/')) {
-      processedUrl = processedUrl.replace('@/', base.endsWith('/') ? base : base + '/');
-    }
-    return processedUrl;
-  }
 
   Object.assign(moduleMap, window.GlobalModuleMMap);
 
@@ -555,32 +558,32 @@ var loadModule = (() => {
   async function loadModule(url, cache = true) {
     // console.log("loadModule", url);
     const base = '/';
-    const cacheOriginModuleUrl = getCacheOriginUrl(url, base);
-    let moduleUrl = getBaseOriginUrl(url, base);
+    const moduleCacheId = getModuleCacheId(url, base);
+    let moduleUrl = getModuleBaseUrl(url, base);
 
     let [moduleResolve, moduleReject, module] = resolveModule();
 
-    if (moduleCache[cacheOriginModuleUrl]) {
+    if (moduleCache[moduleCacheId]) {
       // 使用缓存
-      return moduleCache[cacheOriginModuleUrl];
+      return moduleCache[moduleCacheId];
     } else {
       // 添加到缓存
-      moduleCache[cacheOriginModuleUrl] = module;
+      moduleCache[moduleCacheId] = module;
       if (typeof cache === "number") {
         // 过期清空缓存
-        setTimeout(() => (moduleCache[cacheOriginModuleUrl] = null), cache);
+        setTimeout(() => (moduleCache[moduleCacheId] = null), cache);
       } else if (cache === false) {
         // 不缓存
-        moduleCache[cacheOriginModuleUrl] = undefined;
+        moduleCache[moduleCacheId] = undefined;
       }
     }
 
     // 全局引入模块
-    if (moduleMap[cacheOriginModuleUrl]) {
-      if (moduleMap[cacheOriginModuleUrl] instanceof Function) {
-        moduleResolve(moduleMap[cacheOriginModuleUrl]());
+    if (moduleMap[moduleCacheId]) {
+      if (moduleMap[moduleCacheId] instanceof Function) {
+        moduleResolve(moduleMap[moduleCacheId]());
       } else {
-        moduleResolve(moduleMap[cacheOriginModuleUrl]);
+        moduleResolve(moduleMap[moduleCacheId]);
       }
       return module;
     }
@@ -616,7 +619,16 @@ var loadModule = (() => {
         exist = await fileExist(newUrl);
         if (exist) {
           moduleUrl = newUrl;
-          if (ext === "js") {
+          if (ext === 'm.js') {
+            loadModule.exposeModule = (callModule) => {
+              const mod = callModule();
+              moduleResolve(mod);
+              return mod;
+            };
+            loadModule.exposeModule.id = moduleCacheId;
+            loadScript(moduleUrl).then(moduleResolve).catch(moduleReject);
+            return module;
+          } else if (ext === "js") {
             loadModuleJs(moduleUrl, cache).then(moduleResolve, moduleReject);
           } else {
             loadModuleTsx(moduleUrl, cache).then(moduleResolve, moduleReject);
@@ -645,7 +657,7 @@ var loadModule = (() => {
  * @param {boolean} cache 是否缓存
  */
 function loadScript(url, isEsm = false, cache = false) {
-  let ID = url.split("/").join("_");
+  let ID = getModuleCacheId(url, '/');
   url = cache ? url : url + "?v=" + new Date().getTime();
   let script;
 
@@ -673,16 +685,26 @@ function loadScript(url, isEsm = false, cache = false) {
     script.dataset.time = new Date().getTime() + "";
     if (module1) script.type = "module";
 
-    document.body.appendChild(script);
 
-    return new Promise((res, rej) => {
-      script.onload = () => {
-        res(script);
-      };
+    const promise = new Promise((res, rej) => {
+      script.exposeModule = loadModule.exposeModule;
+      script.resolve = res;
+      script.reject = rej;
+
+      document.body.appendChild(script);
+      // console.log("1. addScript", id);
+      // script.onload = () => {
+      //   promise.then(() => {
+      //     console.log('3. 已加载模块', id);
+      //   })
+      //   console.log('2. script onload', id);
+      // };
       script.onerror = (e) => {
+        console.error('script onerror', id, e);
         rej(e);
       };
     });
+    return promise;
   }
 
   function removeScript() {

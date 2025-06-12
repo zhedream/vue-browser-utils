@@ -12,8 +12,14 @@
       // npx babel ${fileDirname}\\${fileBasename} --out-file ${fileDirname}\\${fileBasenameNoExt}.js --presets=@babel/preset-typescript --plugins=babel-plugin-transform-vue-jsx
       "match": "\\.ts*",
       "isAsync": true,
-      "cmd": "cd /d ${currentWorkspace} && npx babel ${fileDirname}\\${fileBasename} --out-file ${fileDirname}\\${fileBasenameNoExt}.m.js --source-maps",
+      "cmd": "cd /d ${currentWorkspace} && npx babel ${fileDirname}\\${fileBasename} --out-file ${fileDirname}\\${fileBasenameNoExt}.m.js",
       "event": "onFileChange"
     }
-  ]
+  ],
+  "todo-tree.highlights.customHighlight": {
+    "NOTE": {
+      "icon": "check",
+      "type": "line"
+    },
+  }
 }
