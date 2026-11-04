@@ -1,4 +1,4 @@
-const transformVueTsx = require("../src/transformVueTsx");
+const transformVueTsx = require("../src/compiler/transformVueTsx");
 
 console.log(transformVueTsx(
 `

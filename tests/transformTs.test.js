@@ -1,4 +1,4 @@
-const transformTs = require("../src/transformTs");
+const transformTs = require("../src/compiler/transformTs");
 
 console.log(transformTs(`
 const anExampleVariable = "Hello World"

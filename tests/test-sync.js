@@ -1,5 +1,5 @@
 const babel = require("@babel/standalone/babel.min.js");
-const injectExposeModulePlugin = require("../src/injectExposeModulePlugin");
+const injectExposeModulePlugin = require("../src/compiler/injectExposeModulePlugin");
 
 // 同步测试代码
 const syncCode = `

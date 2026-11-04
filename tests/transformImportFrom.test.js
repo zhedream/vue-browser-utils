@@ -4,7 +4,7 @@ const parser = babel.packages.parser;
 const traverse = babel.packages.traverse.default;
 const generate = babel.packages.generator.generate;
 const t = babel.packages.types;
-const transformImportFrom = require("../src/transformImportFrom");
+const transformImportFrom = require("../src/compiler/transformImportFrom");
 
 // 示例使用
 const code = `

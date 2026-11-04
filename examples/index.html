@@ -1,26 +1,17 @@
-<div id="app">
-  <a-component></a-component>
-  <div @click="test">qweqwe</div>
-  <B-Component></B-Component>
-  <demo-user></demo-user>
-  <Demo2></Demo2>
-</div>
-
-<!-- 引入 less -->
-<script src="https://cdn.jsdelivr.net/npm/less/dist/less.min.js"></script>
-
-<!-- 引入 Vuejs 3 -->
-<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.min.js"></script>
-
-<!-- 自定义模块 -->
-<script src="../transformCodeToExposeModule.min.js"></script>
-<script src="../src/moduleM.js"></script>
-
-<!-- 引入 requirejs, 必须在 vue 之后引入 -->
-<script src="https://requirejs.org/docs/release/2.3.6/comments/require.js"></script>
-
-
-
-<script>
-  runModuleMJs('./index.js')
-</script>
+<!DOCTYPE html>
+<html lang="zh-CN"
+  ><head>
+    <meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ModuleM · 站点工作台</title>
+    <link rel="stylesheet" href="../node_modules/ant-design-vue/dist/antd.css" />
+    <link rel="stylesheet" href="./style.css" /> </head
+  ><body>
+    <div id="app"><p style="padding: 40px">正在加载工作台…</p></div>
+    <script src="../node_modules/vue/dist/vue.js"></script>
+    <script src="../node_modules/moment/min/moment.min.js"></script>
+    <script src="../node_modules/ant-design-vue/dist/antd.js"></script>
+    <script src="../moduleM/transformCodeToExposeModule.min.js"></script>
+    <script src="../moduleM/moduleM.js"></script>
+    <script src="./moduleM.config.js"></script>
+    <script src="./main.js"></script> </body
+></html>

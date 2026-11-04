@@ -1,7 +1,7 @@
 // 简单默认配置：npx babel .\test.tsx --out-file test.js --presets=@vue/babel-preset-jsx,@babel/preset-typescript
 // npx babel .\test.tsx --out-file test.js 完整配置：要使用 babel.config.js 配置文件
-const transformImportExportPlugin = require("./src/transformImportExportPlugin");
-const injectExposeModulePlugin = require("./src/injectExposeModulePlugin");
+const transformImportExportPlugin = require("./src/compiler/transformImportExportPlugin");
+const injectExposeModulePlugin = require("./src/compiler/injectExposeModulePlugin");
 
 module.exports = {
   presets: [

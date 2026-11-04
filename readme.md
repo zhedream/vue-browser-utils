@@ -1,285 +1,74 @@
-# 异步 template 组件
+# vue-browser-utils / moduleM
 
-在 browser 环境中更优雅地编写 Vue 组件, 就像写 .vue 单文件组件
+面向 Vue 2.7 的浏览器模块运行时：静态 HTML 入口，按需加载 Vue SFC、JS、TS/TSX 与预编译模块，无需 Vite/Webpack。示例使用 ant-design-vue 1.7.8。
 
-## 安装
+想了解这套工具为什么会出现，可以先读 [没有重写的这几年](docs/moduleM-story.md)。逐阶段的代表代码、提交时间和技术变化见 [moduleM 发展史](docs/moduleM-history.md)。
 
-```bash
-# 下载依赖
-pnpm i
-# 打包 UMD 模块
-pnpm run build
+## 启动示例系统
+
+```sh
+npm install
+npm run dev
 ```
 
-## 定义组件
+打开 http://127.0.0.1:14030/examples/ 。可用 PORT 环境变量修改端口。
+开发命令自动构建运行时、增量编译并监听 examples 下的 TS/TSX，再启动不缓存的静态服务。源码修改后刷新页面；不提供 HMR。修改运行时源码后重新运行 dev 或 build。
+
+示例包含运行概览、站点管理、搜索/状态筛选、新增/编辑弹窗、共享统计卡片和本地模拟 API。数据保存到浏览器 localStorage，不调用业务后台。页面切换销毁旧组件，概览页用 beforeDestroy 清理时钟。
+
+## 目录
+
+| 目录 | 用途 |
+| --- | --- |
+| src/moduleM/ | 运行时、JSX helper、项目配置模板源码 |
+| src/compiler/ | Babel 转换与预编译插件源码 |
+| moduleM/ | 可直接复制部署的构建产物；请勿直接修改 |
+| scripts/ | dev.js、build-runtime.js、sync-runtime.js 三个入口 |
+| scripts/internal/ | TS 内容缓存编译与监听，由 dev 内部调用 |
+| examples/ | 完整示例系统，入口 index.html / App.vue |
+| tests/ | 运行时回归与编译器示例 |
+| docs/ | [发展史](docs/moduleM-history.md)、[博客文章](docs/moduleM-story.md)、[导入导出示例](docs/导入导出示例.md)、[注入环境](docs/注入环境.md) |
+
+## 接入业务项目
+
+在库目录执行：
+
+```sh
+npm run build
+npm run sync -- E:/www/air-grid/Grid_Web_Front/moduleM
+```
+
+sync 只复制已构建产物，不自动构建。复制 moduleM.js、编译 bundle、JSX helper、配置模板和 babel/ 插件；内容相同时不写入。目标目录由参数指定，不绑定 Grid 项目。
+
+新项目复制 moduleM.config.example.js 为 moduleM.config.js，按项目配置包映射、站点根目录和 Sass 资源地址。类似 .env.example 与 .env，但这里是浏览器脚本，必须显式加载。同步可更新模板，始终不覆盖实际配置。
 
 ```html
-<template>
-  <div @click="test">{{title}}</div>
-</template>
+<!-- 先引入 Vue 与项目使用的第三方脚本 -->
+<script src="moduleM/transformCodeToExposeModule.min.js"></script>
+<script src="moduleM/moduleM.js"></script>
+<script src="moduleM/moduleM.config.js"></script>
 <script>
-  defineComponent((Vue, template) => {
-    return {
-      name: "DemoComponent",
-      ...Vue.compile(template),
-      props: {
-        title: {
-          type: String,
-          default: "我是Demo组件",
-        },
-      },
-      created() {
-        console.log("我是Demo组件的created");
-      },
-      methods: {
-        test() {
-          hello2();
-        },
-      },
-    };
-  });
-
-  function hello2() {
-    console.log("fff");
-  }
+  mountModuleVue('@/App.vue', '#app');
 </script>
-<style></style>
 ```
 
-## 使用
+模块包名由 moduleM.configure({ modules }) 映射；@/ 基于 baseUrl。配置模板假设自身位于站点的 moduleM/，examples 的配置则将 @/ 指向 examples/。Sass 路径按部署设置，不再硬编码在运行时里。
 
-在没有 requirejs 的环境,会暴露全局 vueBrowserUtils
+## 编译与缓存
 
-```js
-// <script src="vue-browser-utils.js"></script>
-const { loadAsyncComponent } = vueBrowserUtils;
-
-new Vue({
-  components: {
-    AComponent: loadAsyncComponent("../components/demo.html", "AComponent"),
-  },
-  render(h) {
-    return h("div", [
-      [
-        h("a-component", {
-          props: {
-            title: "我是A组件",
-          },
-        }),
-      ],
-    ]);
-  },
-}).$mount("#app");
+```sh
+npm run dev   # 自动编译监听并启动示例
+npm test      # 运行全部测试
 ```
 
-在 requirejs 环境, 则使用 require 引入改模块
+TS 同目录生成 .m.js 和 .m.js.map。缓存位于 .cache/ts-compiler.json，校验源码、配置、插件、依赖版本及输出哈希；输出未变不覆盖，损坏的输出会重新生成。导入临时变量使用稳定模块路径哈希。业务项目可参考 scripts/internal/compile-ts.js 和 scripts/internal/watch-ts.js 调整监听目录，不需要编辑器插件。
 
-```js
-require(["vue-browser-utils.js"], function (u) {
-  const { loadAsyncComponent } = u;
+loadModule 显式加载 TS 时优先同名 .m.js，其次 .js，最后运行时编译。历史含 ESM 的 .m.js 与预编译包装均兼容。loadAsyncComponent(url, cache) 的第二参数是缓存策略，不是组件名称。
 
-  new Vue({
-    el: "#app",
-    components: {
-      AComponent: loadAsyncComponent("../components/demo.html", "AComponent"),
-    },
-  });
-});
-```
+运行时 cache=true 复用成功结果及并发请求；false 重新加载；数字指定有效毫秒数；失败可重试。moduleM.clearCache(url) 清除对应缓存，不自动替换已有实例。moduleM.configure 会清理缓存，应在业务加载前调用。
 
-## API
+## 本版迁移
 
-loadAsyncComponent
+旧独立 UMD 入口、独立异步组件加载器和旧 components 示例已删除；统一使用 moduleM。旧 moduleM.legacy.js 已改为配置模板，不再自动提供项目包映射。根目录产物统一移到 moduleM/；外部脚本如引用旧路径需相应调整。package main 指向浏览器运行时，不是供 Node require 执行的服务端 API。
 
-加载 异步 html 组件: 参数 1: 组件路径参数 2: 唯一 ID
-
-getTemplateString
-
-fetchTemplateString
-
-extendTemplate
-
-renderTemplate
-
-defineAsyncTemplateComponent
-
-compile
-
-defineComponent
-
-requireModuleList
-
-requireModule
-
-## 升级版 moduleM.js
-
-自定义模块运行时, 用于在浏览器环境中加载 自定义模块 xx.m.js xx.m.vue
-
-m 模块 使用 esm 语法, 无需打包, 直接在浏览器中运行
-
-兼容性: JavaScript 的 ECMAScript 2017（ES8）
-
-外部使用 loadModule 加载模块
-
-新增模块引入支持
-
-引入 Amd 模块
-
-支持 ES6 模块, AST 转换成 自定义模块语法
-
-支持 .vue 文件
-
-# 自定义模块插件
-
-moduleM.js 支持使用 js (ES 语法)文件。支持 .vue 文件。支持 .ts/.tsx 文件的模块加载。
-
-loadModule 函数为核心函数，支持加载 js 文件，vue 文件，ts 文件。
-
-mountModuleVue 可以将 .vue ，挂载到指定的 dom 上。
-
-runModuleMJs 可以运行 js 文件。
-
-## 全局库的引入
-
-```js
-import { ref } from "vue";
-```
-
-moduleM.js `loadModule` 配置 `moduleMap，` 或者 定义全局变量 `GlobalModuleMMap`
-
-```js
-const moduleMap = {
-  vue: () => {
-    // 一些库需要手动处理 默认导出。
-    Vue.default = Vue;
-    return Vue;
-  },
-  "ant-design-vue": () => antd,
-};
-```
-
-## 关于 .vue 文件
-
-只能有一个 template、script 、style 标签.
-
-script 需要默认导出 options api，不支持 setup.
-
-script 支持 ts 语法，需要引入 `transformTs.min.js` 或 `transformTsx.min.js`
-
-style 也支持 less, scss 需要引入库依赖。
-
-## js/ts/tsx 模块的引入
-
-**模块导入的缺陷**：需要以根路径为基准,保证路径唯一且一致，不支持相对路径。不支持循环引用。
-
-```js
-import { sum } from "/xx/sum.js"; // 不推荐，编辑器不友好
-import { sum } from "xx/sum.js"; // 不推荐, 不利于重构
-```
-
-这俩种写法都能引入同一个文件，但实际在内存中不是同一个模块，由于路径不一致，缓存不能命中，会被实例化多次。
-
-引入 ts/tsx 同理。
-
-```js
-import { sum } from "/xx/sum.ts"; // 不推荐，编辑器不友好
-import { sum } from "xx/sum.ts"; // 不推荐, 不利于重构
-```
-
-对于 .ts 会优先判断是否存在同名 对应编译的 .js 文件，如果存在则加载 .js 文件，否则会实时编译加载 .ts 文件。
-
-实时编译需要引入 `transformTs.min.js` 或 `transformTsx.min.js`
-
-不推荐实时编译 ts 文件。主要是引入 transformTsx 体积大。建议提前编译好 ts 文件。
-
-自动补全写法： 支持省略 .js/.ts/.tsx 后缀, 会自动查找加载对应的文件。
-
-```js
-import { sum } from "xx/sum"; // 推荐写法
-```
-
-会依次补全 `.js` `.ts` `.tsx` 后缀，查找对应的文件。
-
-## 手动编译 ts 文件
-
-安装 babel 编译 ts 文件
-
-```bash
-pnpm install --save-dev @babel/core @babel/cli @babel/preset-env babel-preset-typescript babel-plugin-transform-vue-jsx babel-plugin-syntax-jsx
-```
-
-编译 .tsx
-
-```bash
-npx babel server.ts --out-file server.js --presets babel-preset-typescript --plugins babel-plugin-transform-vue-jsx
-```
-
-编译 .ts
-
-```bash
-npx babel server.ts  --out-file server.js  --presets babel-preset-typescript
-```
-
-## webstorm File Watchers 自动编译 ts 文件
-
-手动编译太繁琐，可以使用 webstorm File Watchers 自动修改后编译
-
-设置->工具->File Watchers
-
-添加一个新的 File Watchers 选择 babel 模板, 修改文件类型选择 TypeScript,
-
-配置以下两项，保存即可完成配置，后续修改 .ts 文件后会自动编译成 .js 文件
-
-    文件类型： TypeScript
-
-    实参：$FileDir$/$FileName$  --out-file  $FileDir$//$FileNameWithoutExtension$.js  --presets babel-preset-typescript
-
-# 编译环境（最新 babel7 版本）
-
-vue2 的 jsx playground 在线编译环境
-
-https://jsx-vue2-playground.netlify.app/
-
-## babel7 standalone 代码编译 tsx
-
-standalone 内置 typescript 预设
-
-```bash
-pnpm i @babel/standalone @vue/babel-preset-jsx -D
-pnpm i @vue/babel-helper-vue-jsx-merge-props vue@2.7.16
-```
-
-## babel7 cli 编译 tsx
-
-```bash
-pnpm i @babel/cli @babel/preset-typescript -D
-pnpm i @vue/babel-preset-jsx -D
-pnpm i @vue/babel-helper-vue-jsx-merge-props vue@2.7.16
-```
-
-```js babel.config.js
-// cli + 配置
-// npx babel .\test.tsx  --out-file .\test.js
-module.exports = {
-  presets: [
-    [
-      '@vue/babel-preset-jsx',
-      {
-        vModel: false,
-        compositionAPI: 'native',
-      },
-    ],
-    '@babel/preset-typescript'
-    // ['@babel/preset-typescript', { isTSX: true, allExtensions: true }],
-  ],
-  plugins: []
-}
-```
-## babel7 core 自定义编译 import、export 语法
-
-src/transformExportFrom.js
-src/transformImportFrom.js
-
-```bash
-pnpm i @babel/parser @babel/traverse @babel/generator @babel/types -D
-```
+旧全局 loadModule、loadScript、loadAsyncComponent、mountModuleVue、runModuleMJs 以及旧 defineComponent(callback) 组件宏仍由运行时兼容。Vue 导入的 defineComponent 按正常 API 处理。

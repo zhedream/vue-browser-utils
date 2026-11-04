@@ -1,4 +1,4 @@
-const transformVueTsx = require('./src/transformVueTsx');
+const transformVueTsx = require('../src/compiler/transformVueTsx');
 
 // 测试代码 - 简化版本避免重复声明
 const testCode = `

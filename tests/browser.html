@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><title>moduleM browser verification</title></head>
+<body><h1>moduleM browser verification</h1><pre id="results">Running…</pre><div id="sfc"></div><div id="jsx"></div>
+<script src="/vue.js"></script>
+<script src="/grid/moduleM/transformCodeToExposeModule.min.js"></script>
+<script src="/grid/moduleM/moduleM.js"></script>
+<script src="/grid/moduleM/moduleM.config.js"></script>
+<script>
+(async () => {
+  const results = [];
+  function check(ok, name) { if (!ok) throw new Error(name); results.push('PASS ' + name); document.getElementById('results').textContent = results.join('\n'); }
+  const timeout = setTimeout(() => { document.getElementById('results').textContent += '\nFAIL timeout'; }, 10000);
+  try {
+    const runtime = await loadModule('@/fixtures/runtime.ts');
+    const compiled = await loadModule('@/fixtures/compiled.ts');
+    check(runtime.value === 7 && compiled.value === 7, 'runtime TS and precompiled TS agree');
+    check(await loadModule('@/fixtures/compiled.m.js') === compiled, 'explicit .m.js and extensionless share cache');
+    check(await loadModule('@/fixtures/compiled', false) !== compiled, 'cache:false executes again');
+    const [one, two] = await Promise.all([loadModule('@/fixtures/parallel'), loadModule('@/fixtures/compiled')]);
+    check(one.value === 8 && two.value === 7, 'parallel async modules have independent exports');
+    let failure;
+    try { await loadModule('@/fixtures/error'); } catch (e) { failure = e; }
+    check(failure && failure.message === 'async failure', 'async errors reject correctly after currentScript clears');
+    await runModuleMJs('@/fixtures/side'); await runModuleMJs('@/fixtures/side');
+    check(window.side === 2, 'side-effect-only modules settle and rerun');
+    const hooks = await loadModule('@/development/hooks/index.ts');
+    check(typeof hooks.usePageInit === 'function', 'actual project precompiled hooks load through configured Vue');
+    await mountModuleVue('@/fixtures/sample.vue', '#sfc');
+    await mountModuleVue('@/fixtures/jsx.tsx', '#jsx');
+    await Vue.nextTick();
+    check(document.querySelector('.result').textContent === 'SFC mounted', 'Vue SFC with TS setup mounts');
+    check(document.querySelector('.jsx').textContent === 'JSX mounted', 'Vue TSX renders');
+    document.getElementById('results').textContent += '\nALL PASSED';
+    document.title = 'PASS moduleM browser verification';
+  } catch (error) {
+    document.getElementById('results').textContent += '\nFAIL ' + error.stack;
+    document.title = 'FAIL moduleM browser verification';
+  } finally { clearTimeout(timeout); }
+})();
+</script></body></html>

@@ -2,14 +2,15 @@
   "name": "vue-browser-utils",
   "version": "0.1.2",
   "description": "在 browser 环境中更优雅地编写 Vue 组件",
-  "main": "vue-browser-utils.js",
+  "main": "moduleM/moduleM.js",
   "directories": {
     "example": "examples"
   },
   "scripts": {
-    "build": "browserify src/index.js --s vueBrowserUtils > vue-browser-utils.js",
-    "server": "http-server",
-    "transformCodeToExposeModule": "browserify ./src/transformCodeToExposeModule.js --s transformCodeToExposeModule > transformCodeToExposeModule.min.js"
+    "dev": "node scripts/dev.js",
+    "build": "node scripts/build-runtime.js",
+    "sync": "node scripts/sync-runtime.js",
+    "test": "node --test tests/*.test.js"
   },
   "author": "zhedream",
   "license": "MIT",
@@ -21,9 +22,19 @@
     "@vue/babel-helper-vue-jsx-merge-props": "^1.4.0",
     "@vue/babel-preset-jsx": "^1.4.0",
     "browserify": "^17.0.0",
-    "http-server": "^14.1.0"
+    "http-server": "^14.1.0",
+    "ant-design-vue": "1.7.8",
+    "chokidar": "3.6.0",
+    "@babel/core": "^7.27.1"
   },
   "dependencies": {
     "vue": "^2.7.16"
-  }
+  },
+  "files": [
+    "moduleM",
+    "src",
+    "scripts",
+    "babel.config.js",
+    "readme.md"
+  ]
 }

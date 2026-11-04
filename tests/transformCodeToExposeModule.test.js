@@ -5,8 +5,8 @@ const parser = babel.packages.parser;
 const traverse = babel.packages.traverse.default;
 const generate = babel.packages.generator.generate;
 const t = babel.packages.types;
-const transformImportFrom = require("../src/transformImportFrom");
-const transformExportFrom = require('../src/transformExportFrom');
+const transformImportFrom = require("../src/compiler/transformImportFrom");
+const transformExportFrom = require('../src/compiler/transformExportFrom');
 const code = `
 export {menu as ff,uua} from 'javascript/menu2.m.js';
 export * as M2 from 'javascript/user.m.js';
